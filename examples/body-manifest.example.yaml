@@ -1,0 +1,195 @@
+schema_version: 0.1.0
+robot:
+  id: demo.two_dof
+  name: this-is-yourX 2-DOF demo
+  model_revision: demo-v1
+  urdf_package: this_is_yourx_demo_description
+  root_frame: base_link
+  default_locale: zh-TW
+
+components:
+  - id: body.base
+    kind: link
+    name: base
+    ownership: intrinsic
+    frame_id: base_link
+    aliases:
+      - {locale: zh-TW, value: 底座, reviewed: true}
+      - {locale: en, value: base, reviewed: true}
+    capabilities: [support_structure]
+
+  - id: arm.left.shoulder_joint
+    kind: joint
+    name: left shoulder joint
+    ownership: intrinsic
+    parent_id: body.base
+    frame_id: shoulder_link
+    aliases:
+      - {locale: zh-TW, value: 左肩關節, reviewed: true}
+      - {locale: en, value: left shoulder, reviewed: true}
+    binding:
+      driver: demo_dynamixel_bus
+      device_identity: dxl:1
+      command_interface: position
+      state_sources:
+        - {name: position_rad, source: "ros:/joint_states", unit: rad, freshness_ms: 100}
+        - {name: current_a, source: "ros:/servo_states", unit: A, freshness_ms: 250}
+        - {name: temperature_c, source: "ros:/servo_states", unit: degC, freshness_ms: 2000}
+    limits:
+      - {name: position_rad, minimum: -0.52, maximum: 0.52, unit: rad}
+      - {name: velocity_rad_s, minimum: -0.35, maximum: 0.35, unit: rad/s}
+      - {name: temperature_c, maximum: 65.0, unit: degC}
+    capabilities: [read_joint_state, bounded_joint_motion, supervised_wiggle]
+    safe_state:
+      on_timeout: torque_disable
+      on_fault: controlled_stop_then_torque_disable
+      command_timeout_ms: 200
+
+  - id: arm.left.upper_link
+    kind: link
+    name: left upper arm
+    ownership: intrinsic
+    parent_id: arm.left.shoulder_joint
+    frame_id: upper_link
+    aliases:
+      - {locale: zh-TW, value: 左上臂, reviewed: true}
+      - {locale: en, value: left upper arm, reviewed: true}
+    visual:
+      marker_family: tag36h11
+      marker_id: 11
+    capabilities: [visual_localization]
+
+  - id: arm.left.elbow_joint
+    kind: joint
+    name: left elbow joint
+    ownership: intrinsic
+    parent_id: arm.left.upper_link
+    frame_id: elbow_link
+    aliases:
+      - {locale: zh-TW, value: 左手肘, reviewed: true}
+      - {locale: en, value: left elbow, reviewed: true}
+    binding:
+      driver: demo_dynamixel_bus
+      device_identity: dxl:2
+      command_interface: position
+      state_sources:
+        - {name: position_rad, source: "ros:/joint_states", unit: rad, freshness_ms: 100}
+        - {name: current_a, source: "ros:/servo_states", unit: A, freshness_ms: 250}
+    limits:
+      - {name: position_rad, minimum: -0.78, maximum: 0.78, unit: rad}
+      - {name: velocity_rad_s, minimum: -0.35, maximum: 0.35, unit: rad/s}
+    capabilities: [read_joint_state, bounded_joint_motion, supervised_wiggle]
+    safe_state:
+      on_timeout: torque_disable
+      on_fault: controlled_stop_then_torque_disable
+      command_timeout_ms: 200
+
+  - id: arm.left.hand
+    kind: end_effector
+    name: left hand pointer
+    ownership: intrinsic
+    parent_id: arm.left.elbow_joint
+    frame_id: hand_link
+    aliases:
+      - {locale: zh-TW, value: 左手, reviewed: true}
+      - {locale: zh-TW, value: 手, reviewed: false}
+      - {locale: en, value: left hand, reviewed: true}
+    visual:
+      marker_family: tag36h11
+      marker_id: 12
+    capabilities: [visual_localization, point_at_target, receive_attachment]
+
+  - id: sense.external_camera
+    kind: sensor
+    name: external RGB-D camera
+    ownership: intrinsic
+    parent_id: body.base
+    frame_id: external_camera_link
+    aliases:
+      - {locale: zh-TW, value: 眼睛, reviewed: false}
+      - {locale: zh-TW, value: 外部相機, reviewed: true}
+    binding:
+      driver: camera_driver
+      device_identity: replace-with-instance-serial
+      state_sources:
+        - {name: rgb_image, source: "ros:/camera/color/image_raw", freshness_ms: 200}
+        - {name: depth_image, source: "ros:/camera/depth/image_raw", unit: m, freshness_ms: 200}
+    capabilities: [rgb_observation, depth_observation, visual_grounding]
+
+  - id: sense.hand_touch
+    kind: sensor
+    name: hand touch sensor
+    ownership: intrinsic
+    parent_id: arm.left.hand
+    frame_id: hand_link
+    aliases:
+      - {locale: zh-TW, value: 手部觸覺, reviewed: true}
+    binding:
+      driver: demo_mcu
+      device_identity: gpio:touch0
+      state_sources:
+        - {name: touched, source: "ros:/hand/touch", unit: boolean, freshness_ms: 100}
+    capabilities: [touch_observation, interactive_grounding]
+
+  - id: power.motor_rail
+    kind: power
+    name: motor power rail
+    ownership: intrinsic
+    parent_id: body.base
+    aliases:
+      - {locale: zh-TW, value: 馬達電源, reviewed: true}
+    binding:
+      driver: demo_mcu
+      device_identity: gpio:motor_enable
+      state_sources:
+        - {name: enabled, source: "ros:/safety/status", unit: boolean, freshness_ms: 100}
+    capabilities: [motor_power_enable, motor_power_cut]
+    safe_state:
+      on_timeout: power_cut
+      on_fault: power_cut
+      command_timeout_ms: 100
+
+  - id: safety.estop
+    kind: safety
+    name: emergency stop
+    ownership: intrinsic
+    parent_id: body.base
+    aliases:
+      - {locale: zh-TW, value: 緊急停止, reviewed: true}
+      - {locale: en, value: E-stop, reviewed: true}
+    binding:
+      driver: demo_mcu
+      device_identity: gpio:estop_nc
+      state_sources:
+        - {name: released, source: "ros:/safety/status", unit: boolean, freshness_ms: 50}
+    capabilities: [hardware_emergency_stop, safety_state_observation]
+
+skills:
+  - name: stop
+    version: 1.0.0
+    authority_level: A0
+    requires_approval: false
+    timeout_s: 1.0
+
+  - name: wiggle_joint
+    version: 1.0.0
+    authority_level: A2
+    target_kinds: [joint]
+    requires_approval: true
+    timeout_s: 5.0
+    parameter_limits:
+      amplitude_rad: {minimum: 0.005, maximum: 0.052}
+      cycles: {minimum: 1, maximum: 3}
+    preconditions:
+      - safety.estop.released == true
+      - power.motor_rail.enabled == true
+      - target.health == ok
+      - target.state_age_ms < 100
+
+policies:
+  default_authority: A0
+  unknown_precondition: reject
+  stale_state: reject
+  ambiguous_component: ask_user
+  ai_direct_driver_access: deny
+
