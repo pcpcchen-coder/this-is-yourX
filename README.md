@@ -90,7 +90,8 @@ flowchart TD
 | [協作方式與待決策項目](docs/08_COLLABORATION.md) | George 可協助的項目、issue/PR 規則 |
 | [AI Agent 整合](docs/09_AI_AGENT_INTEGRATION.md) | Tools、prompt、model routing 與 agent evaluation |
 | [名詞表](docs/10_GLOSSARY.md) | self-model、grounding、evidence 等詞彙 |
-| [S1 實機建置計畫](docs/11_S1_BUILD_PLAN.md) | 已選定的 2-DOF 本地視覺 MVP BOM、接線與 bring-up |
+| [S1 實機建置計畫](docs/11_S1_BUILD_PLAN.md) | 原 2-DOF 本地視覺方案；目前保留為 fallback |
+| [開發歷史與目前 S1 決策](docs/HISTORY.md) | Amazing Hand 採購、Webcam、影像模型、資料與驗收計畫 |
 | [技術參考](docs/REFERENCES.md) | 官方文件與版本選擇依據 |
 
 另有可直接機器驗證的範例：
@@ -125,14 +126,15 @@ this-is-yourX/
 
 ## 快速開始（目前階段）
 
-目前 repo 是設計與規格階段。2026-09-03 已接受：新製 2-DOF 實機、本地相機/本地推論、S1 桌上型預算，以及 Ubuntu 24.04 + ROS 2 Jazzy + Gazebo Harmonic 基線。完整理由見 [`docs/adr/`](docs/adr/)。
+目前 repo 是設計與規格階段。2026-09-03 已接受：新製實機、本地相機/本地推論、S1 預算，以及 Ubuntu 24.04 + ROS 2 Jazzy + Gazebo Harmonic 基線。同日實際 embodiment 由原 2-DOF 提案轉為已下單的 **Amazing Hand 右手版（4 指、8-DOF）**；原方案保留為 fallback。採購與視覺決策見 [開發歷史](docs/HISTORY.md)。
 
 接下來：
 
-1. 依 [S1 實機建置計畫](docs/11_S1_BUILD_PLAN.md) 核對台灣通路、接頭、電源與機構扭矩，確認後採購。
-2. 在硬體到貨前先完成 manifest loader、2-DOF URDF/Gazebo 與 E00–E02。
-3. 依 B0–B5 順序 bring-up；不得跳過單顆 servo、E-stop 與 timeout 測試。
-4. 先完成 marker-based grounding，再評估本地 VLM；不需要 edge GPU 即可完成 v0.1。
+1. 硬體到貨前建立 Amazing Hand 8-DOF semantic IDs、fake adapter、到貨檢查表及安全單軸 bring-up script。
+2. 核對現有 Webcam 型號，準備固定支架、霧面背景、柔光燈及 ChArUco calibration board。
+3. 到貨後先驗證8顆 servo identity、telemetry、timeout、torque-disable 與實體斷電路徑，不直接執行全幅多軸動作。
+4. 先完成 marker/motion-based grounding，再以自訂 robot-hand keypoint model 建立自身視覺；VLM 不進安全控制鏈。
+5. 所有實機主張必須附 experiment ID、hardware/software/calibration revision 與可重播 evidence。
 
 ## License
 
