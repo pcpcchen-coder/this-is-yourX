@@ -25,11 +25,19 @@
 
 - [Raspberry Pi 5 product page](https://www.raspberrypi.com/products/raspberry-pi-5/)：CPU、RAM、I/O 與 connectivity。
 - [Raspberry Pi 5 documentation](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html)：電源與硬體介面細節。
+- [Raspberry Pi 27W USB-C Power Supply](https://www.raspberrypi.com/products/27w-power-supply/)：5.1V/5A 官方電源規格。
+- [Raspberry Pi Camera Module 3](https://www.raspberrypi.com/products/camera-module-3/)：12MP IMX708 與 autofocus 規格；本專案 v0.1 因 OS 基線不選作預設。
+- [Ubuntu on Raspberry Pi：camera support](https://ubuntu.com/hardware/docs/boards/how-to/special_hardware/rpi-camera/)：Ubuntu/libcamera 支援狀態與相機 sensors。
+- [Ubuntu Raspberry Pi limitations](https://ubuntu.com/hardware/docs/boards/how-to/ubuntu_supported/raspberry-pi/)：Ubuntu 25.04 以前 libcamera stack 限制，作為 v0.1 改用 USB UVC camera 的依據。
 - [NVIDIA Jetson Orin Nano Super announcement](https://developer.nvidia.com/blog/nvidia-jetson-orin-nano-developer-kit-gets-a-super-boost/)：Super mode compute/memory 規格。
 - [NVIDIA Jetson developer kits](https://developer.nvidia.com/embedded/jetson-developer-kits)。
 - [Luxonis OAK-D Pro](https://docs.luxonis.com/hardware/products/OAK-D%20Pro)：stereo depth、on-device compute 與相機規格。
 - [RealSense documentation](https://dev.realsenseai.com/)：depth SDK、calibration、D400 guides。
 - [ROBOTIS DYNAMIXEL](https://www.robotis.us/dynamixel/)：整合 motor、controller、driver、sensor、gear 與 network 的 smart actuator 系列。
+- [DYNAMIXEL XL330-M288-T e-Manual](https://emanual.robotis.com/docs/en/dxl/x/xl330-m288/)：5V、扭矩/電流、feedback、limits、error 與 Bus Watchdog。
+- [OpenRB-150 e-Manual](https://emanual.robotis.com/docs/en/parts/controller/openrb-150/)：4 個 TTL ports、3A DXL port current、ADC、FET 與上電預設 off。
+- [Logitech C920e](https://www.logitech.com/en-hk/products/webcams/c920e-business-webcam.html)：1080p、autofocus、固定與 privacy cover。
+- [ROS 2 v4l2_camera](https://index.ros.org/r/v4l2_camera/)：V4L2 camera controls、image transport 與 ROS 2 介面。
 - [micro-ROS setup](https://github.com/micro-ROS/micro_ros_setup)：ROS 2 與 microcontroller build/integration 支援。
 
 ## 本專案如何使用這些技術

@@ -88,6 +88,9 @@ flowchart TD
 | [開發路線圖](docs/06_ROADMAP.md) | 由模擬到實機的階段、交付物與 gate |
 | [安全、資安與隱私](docs/07_SAFETY_SECURITY_PRIVACY.md) | 硬體安全、AI 權限、紀錄與資料治理 |
 | [協作方式與待決策項目](docs/08_COLLABORATION.md) | George 可協助的項目、issue/PR 規則 |
+| [AI Agent 整合](docs/09_AI_AGENT_INTEGRATION.md) | Tools、prompt、model routing 與 agent evaluation |
+| [名詞表](docs/10_GLOSSARY.md) | self-model、grounding、evidence 等詞彙 |
+| [S1 實機建置計畫](docs/11_S1_BUILD_PLAN.md) | 已選定的 2-DOF 本地視覺 MVP BOM、接線與 bring-up |
 | [技術參考](docs/REFERENCES.md) | 官方文件與版本選擇依據 |
 
 另有可直接機器驗證的範例：
@@ -122,13 +125,14 @@ this-is-yourX/
 
 ## 快速開始（目前階段）
 
-目前 repo 是設計與規格階段。建議先完成以下決策：
+目前 repo 是設計與規格階段。2026-09-03 已接受：新製 2-DOF 實機、本地相機/本地推論、S1 桌上型預算，以及 Ubuntu 24.04 + ROS 2 Jazzy + Gazebo Harmonic 基線。完整理由見 [`docs/adr/`](docs/adr/)。
 
-1. 選擇第一個 embodiment：純模擬、2-DOF 桌上型裝置、現成機械臂或 InMoov。
-2. 盤點現有硬體、可用 Linux/GPU 主機與預算。
-3. 確定是否允許相機/麥克風及雲端模型。
-4. 依 [協作文件](docs/08_COLLABORATION.md) 建立 `hardware-baseline` 決策紀錄。
-5. 先通過 E00–E03，再購買昂貴硬體或接上高扭力致動器。
+接下來：
+
+1. 依 [S1 實機建置計畫](docs/11_S1_BUILD_PLAN.md) 核對台灣通路、接頭、電源與機構扭矩，確認後採購。
+2. 在硬體到貨前先完成 manifest loader、2-DOF URDF/Gazebo 與 E00–E02。
+3. 依 B0–B5 順序 bring-up；不得跳過單顆 servo、E-stop 與 timeout 測試。
+4. 先完成 marker-based grounding，再評估本地 VLM；不需要 edge GPU 即可完成 v0.1。
 
 ## License
 

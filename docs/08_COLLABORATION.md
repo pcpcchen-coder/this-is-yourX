@@ -1,5 +1,14 @@
 # 協作方式與待決策項目
 
+## 0. 已接受的 Phase 0 決策（2026-09-03）
+
+- 第一個實機：**新製 2-DOF 桌上教具**。
+- 視覺資料：**local-only camera / local inference**，v0.1 不使用雲端 VLM。
+- 預算與範圍：**S1 桌上型 MVP**，目標 NT$10,000–15,000，採購前再核價。
+- Runtime：Ubuntu 24.04 + ROS 2 Jazzy + Gazebo Harmonic。
+
+詳細理由、替代方案與 revisit 條件見 [`docs/adr/`](adr/)，執行清單見 [S1 Build Plan](11_S1_BUILD_PLAN.md)。以下未勾選表格保留作後續平台擴展的決策歷程。
+
 ## 1. 我們怎麼合作
 
 這個專案同時包含研究假說、機器人整合與 AI 軟體，建議所有工作都能回答三個問題：
@@ -48,14 +57,7 @@
 
 ## 3. 建議立即建立的 ADR
 
-```text
-docs/adr/
-├── 0001-first-embodiment.md
-├── 0002-ros-baseline.md
-├── 0003-actuator-and-bus.md
-├── 0004-camera-and-recording-policy.md
-└── 0005-ai-runtime-boundary.md
-```
+第一批 ADR 已建立：第一個 embodiment、本地相機政策、S1 預算範圍與 ROS runtime。Actuator/bus 的候選基線記錄在 S1 Build Plan；完成台灣供貨與實際扭矩核對後，再建立最終採購 ADR。
 
 ADR 格式：
 
@@ -150,12 +152,12 @@ manifest / hardware / software / model / calibration。
 
 依 E00–E04 完成 v0.1 demo；完整保留失敗案例，作為後續 learned model 與 diagnosis 的資料。
 
-## 8. 第一輪需要回答的最少問題
+## 8. 下一輪需要 George 協助的最少資訊
 
-若不想一次盤點所有資訊，只要先回答：
+Phase 0 的三個方向已回答。採購與機構定稿前，請再提供：
 
-1. 第一個實體要用「2-DOF 新教具」還是你手上的「InMoov 右手/手臂」？
-2. 你希望第一版完全本地，還是可以把相機截圖送到雲端 VLM？
-3. 實機預算先抓哪一級：S0（不採購）、S1（桌上 MVP）或 S2（機械臂 + edge GPU）？
+1. 目前是否已有 Raspberry Pi 5、USB webcam、5V 電源或 3D printer 可沿用？
+2. 2-DOF 機構希望自行 3D 列印，還是購買 ROBOTIS 原廠 frame？
+3. 你偏好由台灣通路一次買齊，或可接受 ROBOTIS 海外採購？
 
-有這三項就能確定 Phase 0 的硬體與 privacy ADR，其餘可邊做 simulation 邊補。
+這三項只影響 BOM/成本，不阻擋 simulation 與 schema/API 實作。
