@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pcpcchen-coder/this-is-yourX/schemas/component.schema.json",
+  "title": "this-is-yourX body manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "robot", "components", "policies"],
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "robot": {"$ref": "#/$defs/robot"},
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/component"}
+    },
+    "skills": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/skill"},
+      "default": []
+    },
+    "policies": {"$ref": "#/$defs/policies"}
+  },
+  "$defs": {
+    "semanticId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+    },
+    "robot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "model_revision", "root_frame"],
+      "properties": {
+        "id": {"$ref": "#/$defs/semanticId"},
+        "name": {"type": "string", "minLength": 1},
+        "model_revision": {"type": "string", "minLength": 1},
+        "urdf_package": {"type": "string"},
+        "root_frame": {"type": "string", "minLength": 1},
+        "default_locale": {"type": "string", "default": "en"}
+      }
+    },
+    "alias": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locale", "value", "reviewed"],
+      "properties": {
+        "locale": {"type": "string", "minLength": 2},
+        "value": {"type": "string", "minLength": 1},
+        "reviewed": {"type": "boolean"}
+      }
+    },
+    "stateSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "source", "freshness_ms"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
+        "unit": {"type": "string"},
+        "freshness_ms": {"type": "integer", "minimum": 1}
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["driver", "device_identity"],
+      "properties": {
+        "driver": {"type": "string", "minLength": 1},
+        "device_identity": {"type": "string", "minLength": 1},
+        "command_interface": {"enum": ["position", "velocity", "effort", "digital", "none"]},
+        "state_sources": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/stateSource"},
+          "default": []
+        }
+      }
+    },
+    "limit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "unit"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "minimum": {"type": "number"},
+        "maximum": {"type": "number"},
+        "unit": {"type": "string", "minLength": 1}
+      },
+      "anyOf": [
+        {"required": ["minimum"]},
+        {"required": ["maximum"]}
+      ]
+    },
+    "safeState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["on_timeout", "on_fault"],
+      "properties": {
+        "on_timeout": {"type": "string", "minLength": 1},
+        "on_fault": {"type": "string", "minLength": 1},
+        "command_timeout_ms": {"type": "integer", "minimum": 1}
+      }
+    },
+    "visual": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "marker_family": {"type": "string"},
+        "marker_id": {"type": "integer", "minimum": 0}
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "name", "ownership", "capabilities"],
+      "properties": {
+        "id": {"$ref": "#/$defs/semanticId"},
+        "kind": {
+          "enum": ["link", "joint", "sensor", "actuator", "end_effector", "tool", "power", "compute", "software", "safety"]
+        },
+        "name": {"type": "string", "minLength": 1},
+        "ownership": {"enum": ["intrinsic", "attached", "external", "unknown"]},
+        "parent_id": {"$ref": "#/$defs/semanticId"},
+        "frame_id": {"type": "string", "minLength": 1},
+        "aliases": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/alias"},
+          "default": []
+        },
+        "binding": {"$ref": "#/$defs/binding"},
+        "limits": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/limit"},
+          "default": []
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "safe_state": {"$ref": "#/$defs/safeState"},
+        "visual": {"$ref": "#/$defs/visual"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"enum": ["joint", "actuator"]}}, "required": ["kind"]},
+          "then": {"required": ["binding", "limits", "safe_state"]}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "power"}}, "required": ["kind"]},
+          "then": {"required": ["binding", "safe_state"]}
+        }
+      ]
+    },
+    "numericRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minimum": {"type": "number"},
+        "maximum": {"type": "number"}
+      },
+      "anyOf": [
+        {"required": ["minimum"]},
+        {"required": ["maximum"]}
+      ]
+    },
+    "skill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "authority_level", "requires_approval", "timeout_s"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "authority_level": {"enum": ["A0", "A1", "A2", "A3", "A4"]},
+        "target_kinds": {
+          "type": "array",
+          "items": {"type": "string"},
+          "uniqueItems": true
+        },
+        "requires_approval": {"type": "boolean"},
+        "timeout_s": {"type": "number", "exclusiveMinimum": 0},
+        "parameter_limits": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/numericRange"}
+        },
+        "preconditions": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default_authority", "unknown_precondition", "stale_state", "ambiguous_component", "ai_direct_driver_access"],
+      "properties": {
+        "default_authority": {"enum": ["A0", "A1", "A2", "A3", "A4"]},
+        "unknown_precondition": {"const": "reject"},
+        "stale_state": {"const": "reject"},
+        "ambiguous_component": {"enum": ["ask_user", "reject"]},
+        "ai_direct_driver_access": {"const": "deny"}
+      }
+    }
+  }
+}
