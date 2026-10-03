@@ -82,4 +82,4 @@ pytest right_hand/tests -q      # 2026-10-03：13 passed
 3. 修舵盤、修樞軸孔，組食指並校正，再做其餘三指。
 4. 手掌組裝、全手測試、外殼。
 5. 建立 8-DOF semantic component IDs 與 manifest，把 bring-up 工具收斂成 hardware adapter。
-6. 使用者計畫之後加入雙目視覺鏡頭，讓系統看得到這隻右手；型號未定，屆時另開資料夾並補 ADR。
+6. 雙目視覺鏡頭已採購（感光元件 AR0144），用來讓系統看得到這隻右手。模組型號等細節確認後另開資料夾並補 ADR，見 [`docs/HISTORY.md`](../docs/HISTORY.md)。

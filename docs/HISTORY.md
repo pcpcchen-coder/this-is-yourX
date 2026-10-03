@@ -65,9 +65,16 @@ Amazing Hand 右手套件（Seeed Studio）已到貨。右手的組裝資料、�
 - 截至 2026-10-03，尚未有任何伺服機上電；沒有 real-hardware validation。
 - bring-up 主機使用 macOS；單軸 bring-up 工具 `right_hand/tools/servo_tool.py` 只在假匯流排上測過。
 
-### 待決策
+### 雙目視覺鏡頭（已採購，待補 ADR）
 
-使用者表示之後會加入雙目視覺鏡頭，讓系統看得到這隻右手。型號、基線與校正方式未定。這與上方「視覺來源：既有本地 USB Webcam」「S1 暫不採購深度相機」的決策不同，定案時需另開 ADR。
+使用者於 2026-10-03 回報已購入雙目視覺鏡頭，感光元件為 **AR0144**，用途是讓系統看得到這隻右手。依 [onsemi 產品頁](https://www.onsemi.com/products/sensors/image-sensors/ar0144cs)，AR0144CS 是 1/4 吋、1.0 MP（1280×800）、global shutter 的 CMOS 感光元件，有黑白與彩色版本。
+
+這與上方 2026-09-03 的「視覺來源：既有本地 USB Webcam」「S1 暫不採購深度相機」不同，需另開 ADR 固化。ADR 定案前尚缺：
+
+- 模組廠牌與型號、介面（USB UVC 或 MIPI）、是否到貨。
+- 黑白或彩色。黑白版不能用彩色點當 ground truth，要改用 ArUco/AprilTag 類 marker。
+- 基線、鏡頭視角與對焦方式、左右眼是否硬體同步。
+- 解析度影響：單眼 1280×800 低於 S1 驗收表的「1080p30 或可說明的等效設定」，ADR 要說明等效性或調整該 gate。
 
 ## S1 視覺與自我模型計畫
 
