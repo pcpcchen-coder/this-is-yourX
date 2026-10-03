@@ -23,7 +23,7 @@
 - 決定用 Mac 接這隻手。Feetech 除錯軟體只有 Windows 版，改寫 [`tools/servo_tool.py`](tools/servo_tool.py)（rustypot 1.10）。
 - 工具在假匯流排上測試：`pytest right_hand/tests -q` → 13 passed。**未在實體伺服機上執行過。**
 - 把到目前為止的資料整理進本 repo 的 `right_hand/`。
-- 使用者回報雙目視覺鏡頭已購入，感光元件 AR0144；模組型號、介面、黑白或彩色尚未記錄。
+- 使用者回報雙目視覺鏡頭已購入：Waveshare AR0144 Stereo USB Camera (A)，SKU 32695。相機的紀錄另放 `stereo_camera/`。
 - 使用者確認官方手冊頁面圖片留在 repo（來源與授權見 `THIRD_PARTY_NOTICES.md`）。
 
 ### 待辦（下一次接手從這裡開始）
