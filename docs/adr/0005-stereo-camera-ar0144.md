@@ -27,6 +27,8 @@ George 已購入並收到 **Waveshare AR0144 Stereo USB Camera (A)**（SKU 32695
 
 廠商資料沒有寫的：彩色或黑白、併排影像的左右順序、對焦距離與景深、同步精度、是否有出廠校正。
 
+2026-10-03 接上 Mac mini 後以 Photo Booth 目視確認：macOS 免驅動可用（裝置名 `CCB Camera`）、影像為彩色、輸出為左右併排。這是初步觀察，不是下方 Validation 的正式結果。
+
 ## Decision
 
 - S1 的主要視覺來源改為這台雙目相機。既有 USB Webcam 降為 fallback。
@@ -82,7 +84,7 @@ HISTORY 原先指定優先評估。有成熟 SDK 與出廠校正，理想工作�
 - USB 2.0 頻寬下全解析度只能用 MJPG，壓縮失真會影響次像素精度。
 - macOS 上經 OpenCV 可能無法鎖定曝光、增益、白平衡。HISTORY 要求校正後鎖定這些設定；做不到就必須記錄限制，或改在 Linux 擷取。
 - Wiki 提到模組運作時發熱明顯。熱漂移可能影響校正，需要量測暖機前後的差異。
-- 若實物是黑白版，HISTORY 提到的「初期貼彩色點產生 ground truth」不可用，要改用 ArUco / AprilTag 類 marker。
+- 實物是彩色版，HISTORY 提到的「初期貼彩色點產生 ground truth」可行。
 - Dataset v0 的每筆紀錄要能指到左右兩張影像與 stereo calibration revision。
 - 後續工作：相機納入 body manifest、fake camera adapter、stale / disconnect 測試、ADR-0002 的 Camera baseline 一節加註由本 ADR 取代。
 
