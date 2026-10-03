@@ -52,6 +52,23 @@ Amazing Hand 官方資料描述：
 
 若套件未包含可由主機使用的 TTL/serial bus adapter、穩壓電源或實體 E-stop，須先補齊再進行實機動作。
 
+## 2026-10-02 — Amazing Hand 右手到貨，開始 bring-up
+
+### 摘要
+
+Amazing Hand 右手套件（Seeed Studio）已到貨。右手的組裝資料、到貨清點、bring-up 工具與逐日紀錄集中在 [`right_hand/`](../right_hand/README.md)，不與之後的其他元件混放。
+
+### 事實
+
+- 變壓器標示 5V 3A。
+- 已拍照核對五金、線材、驅動板（`Servo Driver Board for XIAO V1.0`）、分線板與伺服機；結構件尚未核對。詳見 [到貨清點](../right_hand/docs/arrival_inspection.md)。
+- 截至 2026-10-03，尚未有任何伺服機上電；沒有 real-hardware validation。
+- bring-up 主機使用 macOS；單軸 bring-up 工具 `right_hand/tools/servo_tool.py` 只在假匯流排上測過。
+
+### 待決策
+
+使用者表示之後會加入雙目視覺鏡頭，讓系統看得到這隻右手。型號、基線與校正方式未定。這與上方「視覺來源：既有本地 USB Webcam」「S1 暫不採購深度相機」的決策不同，定案時需另開 ADR。
+
 ## S1 視覺與自我模型計畫
 
 ### S1 的工程定義
