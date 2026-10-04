@@ -14,15 +14,26 @@ for c in python3.13 python3.12 python3.11 python3.10 python3; do
     PY="$c"; break
   fi
 done
-if [ -z "$PY" ]; then
-  echo "找不到 Python 3.10 以上。先執行：brew install python@3.12"
-  exit 1
-fi
-echo "== Python：$($PY --version)"
+UV="$(command -v uv 2>/dev/null || true)"
+[ -z "$UV" ] && [ -x "$HOME/.local/bin/uv" ] && UV="$HOME/.local/bin/uv"
 
-if [ ! -x .venv/bin/python ]; then
-  "$PY" -m venv .venv || exit 1
+if [ -x .venv/bin/python ] && ! .venv/bin/python -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'; then
+  rm -rf .venv                      # 舊環境的 Python 太舊，重建
 fi
+if [ ! -x .venv/bin/python ]; then
+  if [ -n "$PY" ]; then
+    "$PY" -m venv .venv || exit 1
+  elif [ -n "$UV" ]; then
+    echo "== 系統沒有 Python 3.10 以上，改用 uv 下載 Python 3.12"
+    "$UV" venv --seed --python 3.12 .venv || exit 1
+  else
+    echo "找不到 Python 3.10 以上，也沒有 uv。先安裝 uv（不需要管理員權限）："
+    echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
+    echo "裝完再執行一次這支腳本。"
+    exit 1
+  fi
+fi
+echo "== Python：$(.venv/bin/python --version)"
 .venv/bin/python -m pip install -q -r requirements.txt || { echo "套件安裝失敗"; exit 1; }
 echo "== rustypot：$(.venv/bin/python -m pip show rustypot 2>/dev/null | sed -n 's/^Version: //p')"
 

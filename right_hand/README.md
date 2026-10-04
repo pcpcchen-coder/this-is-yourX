@@ -49,6 +49,8 @@ right_hand/
 
 需要 Python 3.10 以上（macOS 內建的 3.9 只裝得到舊版 rustypot）。
 
+第一次上電最快的做法是 `bash tools/first_scan.sh`：它會找 Python 3.10 以上，找不到就用 [uv](https://docs.astral.sh/uv/) 下載 3.12，然後建環境、找序列埠、做一次只讀掃描。
+
 ```bash
 cd right_hand
 python3 -m venv .venv && source .venv/bin/activate
