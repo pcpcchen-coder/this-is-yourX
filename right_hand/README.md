@@ -58,6 +58,7 @@ pip install -r requirements.txt
 
 python tools/servo_tool.py ports              # 找驅動板的序列埠
 python tools/servo_tool.py scan  <PORT>       # 只讀，列出回應的 ID
+python tools/servo_tool.py diag  <PORT>       # 掃不到時用：送 PING 並印出原始位元組
 python tools/servo_tool.py test  <PORT> <ID>  # 單顆、無負載、±20° 低速擺動
 python tools/servo_tool.py setid <PORT> 1 3   # 匯流排上只接一顆時改 ID
 ```
@@ -68,7 +69,7 @@ python tools/servo_tool.py setid <PORT> 1 3   # 匯流排上只接一顆時改 I
 
 ```bash
 pip install pytest
-pytest right_hand/tests -q      # 2026-10-03：13 passed
+pytest right_hand/tests -q      # 2026-10-04：17 passed
 ```
 
 ## 安全邊界

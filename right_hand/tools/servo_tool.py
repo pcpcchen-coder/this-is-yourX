@@ -8,6 +8,7 @@
 用法：
   python servo_tool.py ports                 列出序列埠
   python servo_tool.py scan  PORT            掃描匯流排上的伺服機（只讀）
+  python servo_tool.py diag  PORT            掃不到時用：送 ping 並印出收到的原始位元組（只讀）
   python servo_tool.py test  PORT ID         讀狀態並小幅擺動一次（單顆、低速）
   python servo_tool.py setid PORT OLD NEW    改 ID（匯流排上只能接一顆）
 
@@ -42,16 +43,19 @@ def one(v):
 
 
 def scan(c):
-    if hasattr(c, "scan"):
-        found = c.scan(SCAN_IDS)
-    else:  # 舊版 rustypot 沒有 scan，逐一 ping
-        found = {}
+    found = c.scan(SCAN_IDS) if hasattr(c, "scan") else {}
+    if not found:
+        # rustypot 的 scan 用很短的逾時；USB 轉序列埠有延遲時可能漏掉，改用較長逾時逐一 ping。
+        if hasattr(c, "set_timeout"):
+            c.set_timeout(0.05)
         for i in SCAN_IDS:
             try:
                 if c.ping(i):
                     found[i] = one(c.read_model_number(i))
             except Exception:
                 pass
+        if hasattr(c, "set_timeout"):
+            c.set_timeout(0.5)
     return dict(sorted(found.items()))
 
 
@@ -76,6 +80,70 @@ def cmd_scan(port):
         tag = "SCS0009" if model == MODEL_SCS0009 else "型號碼 %d" % model
         print("ID %d  %s" % (i, tag))
     return 0
+
+
+def _ping_packet(sid):
+    body = bytes([sid, 0x02, 0x01])                 # ID、長度、PING
+    return b"\xff\xff" + body + bytes([(~sum(body)) & 0xFF])
+
+
+def _hex(b):
+    return " ".join("%02X" % x for x in b) or "（無）"
+
+
+def classify_reply(sent, received):
+    """回傳 (有無回音, 回應的伺服機 ID 或 None)。"""
+    echo = received.startswith(sent)
+    rest = received[len(sent):] if echo else received
+    i = rest.find(b"\xff\xff")
+    if i >= 0 and len(rest) >= i + 6:
+        sid, length = rest[i + 2], rest[i + 3]
+        frame = rest[i + 2:i + 4 + length]
+        if length == 2 and (~sum(frame[:-1])) & 0xFF == frame[-1]:
+            return echo, sid
+    return echo, None
+
+
+def cmd_diag(port):
+    """只送 PING（不寫入、不開扭力），把收到的位元組原樣印出來。"""
+    import serial
+
+    seen_any = seen_echo = False
+    answered = {}
+    for baud in (1_000_000, 500_000, 115_200):
+        with serial.Serial(port, baud, timeout=0.3) as s:
+            for label, sid in (("ID 1", 1), ("廣播", 0xFE)):
+                pkt = _ping_packet(sid)
+                s.reset_input_buffer()
+                s.write(pkt)
+                s.flush()
+                time.sleep(0.05)
+                rx = s.read(64)
+                echo, who = classify_reply(pkt, rx)
+                seen_any = seen_any or bool(rx)
+                seen_echo = seen_echo or echo
+                if who is not None:
+                    answered[baud] = who
+                print("%7d baud  %s  送 %s  收 %s%s%s" % (
+                    baud, label, _hex(pkt), _hex(rx),
+                    "  ← 含回音" if echo else "",
+                    "  ← 伺服機 ID %d 回應" % who if who is not None else ""))
+    print()
+    if answered:
+        for baud, who in answered.items():
+            print("結論：伺服機有回應，ID %d，鮑率 %d。" % (who, baud))
+        if seen_echo:
+            print("另外板子會把送出的資料回傳（回音），掃描工具可能因此誤判，請把這份輸出貼回來。")
+        return 0
+    if seen_echo:
+        print("結論：只收到自己送出的資料，伺服機沒有回應。")
+        print("　　　電腦到板子是通的；問題在伺服機這一側：沒供電、3-pin 線沒插到底或插反、伺服機故障。")
+    elif seen_any:
+        print("結論：收到雜訊但不是有效回應。請把這份輸出貼回來。")
+    else:
+        print("結論：完全沒有資料回來。")
+        print("　　　可能是：變壓器沒插（伺服機沒電）、3-pin 線沒插到底、板子不在 USB 模式、伺服機故障。")
+    return 1
 
 
 def cmd_test(port, sid):
@@ -167,6 +235,8 @@ def main(argv):
             return cmd_ports()
         if cmd == "scan" and len(argv) == 3:
             return cmd_scan(argv[2])
+        if cmd == "diag" and len(argv) == 3:
+            return cmd_diag(argv[2])
         if cmd == "test" and len(argv) == 4:
             return cmd_test(argv[2], int(argv[3]))
         if cmd == "setid" and len(argv) == 5:

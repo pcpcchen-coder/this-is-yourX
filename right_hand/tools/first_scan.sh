@@ -49,8 +49,8 @@ if [ -z "$PORT" ]; then
   PORT="$PORTS"
 fi
 
-echo "== 掃描 $PORT"
+echo "== 掃描 ${PORT}"
 .venv/bin/python tools/servo_tool.py scan "$PORT"
 RC=$?
-echo "== 結束（代碼 $RC），紀錄：right_hand/$LOG"
+echo "== 結束（代碼 ${RC}），紀錄：right_hand/${LOG}"
 exit $RC
