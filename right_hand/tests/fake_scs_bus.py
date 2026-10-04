@@ -61,8 +61,9 @@ class FakeServo:
 class FakeBus:
     """用法：`with FakeBus([FakeServo(1)]) as bus: ... bus.port ...`"""
 
-    def __init__(self, servos):
+    def __init__(self, servos, echo=False):
         self.servos = list(servos)
+        self.echo = echo            # 模擬半雙工板子把送出的位元組回傳
         self.writes = []            # (當下的 id, addr, [bytes])，依時間順序
         self._stop = threading.Event()
 
@@ -104,6 +105,13 @@ class FakeBus:
                     break
                 pkt, buf = buf[i:i + 4 + length], buf[i + 4 + length:]
                 inst, params = pkt[4], pkt[5:-1]
+                if self.echo:
+                    os.write(self._master, pkt)
+                if sid == 0xFE and inst == 0x01:      # 廣播 PING：每顆都回
+                    for sv in self.servos:
+                        body = bytes([sv.sid, 2, 0])
+                        os.write(self._master, b"\xff\xff" + body + bytes([(~sum(body)) & 0xFF]))
+                    continue
                 servo = self._find(sid)
                 if servo is None:
                     continue

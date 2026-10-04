@@ -125,3 +125,37 @@ def test_torque_is_disabled_when_the_servo_stops_answering_mid_wiggle():
         finally:
             servo_tool.one = real
     assert servo.torque_history == [1, 0]
+
+
+def test_diag_reports_a_responding_servo_and_writes_nothing(capsys):
+    pytest.importorskip("serial")
+    with FakeBus([FakeServo(1)]) as bus:
+        assert run("diag", bus.port) == 0
+        assert bus.writes == []
+    assert "伺服機有回應，ID 1" in capsys.readouterr().out
+
+
+def test_diag_finds_a_servo_with_an_unexpected_id_via_broadcast(capsys):
+    pytest.importorskip("serial")
+    with FakeBus([FakeServo(7)]) as bus:
+        assert run("diag", bus.port) == 0
+    assert "ID 7" in capsys.readouterr().out
+
+
+def test_diag_distinguishes_echo_only_from_silence(capsys):
+    pytest.importorskip("serial")
+    with FakeBus([], echo=True) as bus:
+        assert run("diag", bus.port) == 1
+    assert "只收到自己送出的資料" in capsys.readouterr().out
+    with FakeBus([]) as bus:
+        assert run("diag", bus.port) == 1
+    assert "完全沒有資料回來" in capsys.readouterr().out
+
+
+def test_classify_reply_strips_echo_and_checks_checksum():
+    sent = servo_tool._ping_packet(1)
+    good = bytes([0xFF, 0xFF, 1, 2, 0, 0xFC])
+    assert servo_tool.classify_reply(sent, sent + good) == (True, 1)
+    assert servo_tool.classify_reply(sent, good) == (False, 1)
+    assert servo_tool.classify_reply(sent, sent) == (True, None)
+    assert servo_tool.classify_reply(sent, bytes([0xFF, 0xFF, 1, 2, 0, 0x00])) == (False, None)
