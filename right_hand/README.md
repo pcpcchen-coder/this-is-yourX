@@ -6,7 +6,7 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 
 ## 目前狀態（2026-10-04）
 
-硬體已到貨。兩顆伺服機已通過單軸小幅轉動測試並設好 ID 1、2，其餘六顆待測。
+硬體已到貨。8 顆伺服機都通過單軸小幅轉動測試並設好 ID 1–8。USB 接地電位差的問題尚未排除（見安全邊界）。
 
 | 項目 | 狀態 |
 |---|---|
@@ -15,10 +15,11 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 | 驅動板供電 | VCC–GND 量得 5V（使用者回報，2026-10-04） |
 | Mac 環境與序列埠 | 已建立：Python 3.12.15、rustypot 1.10.0、`/dev/cu.usbmodem5B790827031` |
 | 驅動板模式與通訊 | USB 模式可用；`scan` 回報 `ID 1  SCS0009`（2026-10-04） |
-| 8 顆伺服機單顆測試、設 ID | 2 / 8：ID 1、2 測試通過（4.7 V、22–23 °C、±20° 誤差在 1° 內）；ID 2 斷電後仍保存 |
+| 8 顆伺服機單顆測試、設 ID | 8 / 8：ID 1–8 測試通過並完成設定（4.7–5.1 V、22–23 °C）；ID 2 斷電後仍保存，其餘未個別驗證斷電保存 |
+| USB 接地 | **未解決**：USB 線頭金屬殼碰到驅動板 USB 外殼，Mac mini 螢幕就會黑一下；原因待量測 |
 | 手指組裝、校正、手掌組裝 | 未開始 |
 
-組裝表進度 6 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
+組裝表進度 7 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
 
 **本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid` 已在實體伺服機上跑過並成功，但那是 bring-up 觀察，沒有 experiment ID；`diag` 仍只在假匯流排上測過。
 
@@ -79,11 +80,12 @@ pytest right_hand/tests -q      # 2026-10-04：17 passed
 - `servo_tool.py` 是給人在工作台上用的 bring-up 工具，不在 AI 控制路徑上。生成式模型不直接下馬達命令；之後的動作一律經 versioned skill 與 Safety Gateway（見根目錄 `AGENTS.md`）。
 - `test` 動作前會檢查：匯流排上只有一顆、電壓在 4.0–7.4V、溫度不超過 60°C；任何一項不符就不開扭力。離開前一定關扭力，包含例外與 Ctrl-C。
 - 變壓器是實體斷電路徑。目前沒有獨立的 E-stop；多軸動作前要補上。
-- 插拔伺服機或線材前先斷電。接上時 USB 最後接，拆下時 USB 最先拔，避免熱插變壓器的瞬變打到電腦。
+- 插拔伺服機或線材前先斷電。
+- **USB 接地電位差未排除**：變壓器供電時，USB 線頭金屬殼一碰到驅動板 USB 外殼，Mac mini 螢幕就會黑一下（2026-10-04）。兩種接線順序都發生過，目前沒有已知不黑屏的順序。量測完成前不再上電；量測項目見 `BUILD_LOG.md`。
 
 ## 接下來
 
-1. 8 顆伺服機逐一 `scan` → `test` → `setid`（1–8），貼標籤，抓出壞件。
+1. 量測並排除 USB 外殼之間的電位差。
 2. 修舵盤、修樞軸孔，組食指並校正，再做其餘三指。
 3. 手掌組裝、全手測試、外殼。
 4. 建立 8-DOF semantic component IDs 與 manifest，把 bring-up 工具收斂成 hardware adapter。
