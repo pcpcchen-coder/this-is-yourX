@@ -62,8 +62,11 @@
   - 兩種接線順序都黑過：USB 先接再插變壓器（第一次）、變壓器先插再接 USB（這次）。所以目前沒有已知不黑屏的順序。
   - 暫行做法：量測完成前不再上電。接下來的修舵盤、組手指到校正前都不需要通電。
 
+- 使用者拍了結構件的照片。目視確認：Hand Plate、Wrist Interface、Top Shell、Soft Shell、長度治具各 1，Proximal Shell、Distal Shell、Link 各 4，另有展示底座。Gimbal、Finger Frame、Proximal、Distal 因重疊無法從照片數清楚，明細在 [`docs/arrival_inspection.md`](docs/arrival_inspection.md)。
+
 ### 待辦（下一次接手從這裡開始）
 
 - [ ] 量測並排除 USB 外殼之間的電位差（見上）。
-- [ ] 核對結構件、長度治具、連桿墊圈數量。
-- [ ] 準備斜口鉗與銼刀（修舵盤用）。
+- [ ] 使用者自行點數 Gimbal ×4、Finger Frame ×8、Proximal ×4、Distal ×4。
+- [ ] 確認修舵盤的工具：斜口鉗、銼刀，以及有沒有 1.5mm 鑽頭。
+- [ ] 1.1 修舵盤：先做 1 顆試做，確認後再做其餘 7 顆。
