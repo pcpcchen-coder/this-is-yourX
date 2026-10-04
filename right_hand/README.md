@@ -6,20 +6,21 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 
 ## 目前狀態（2026-10-04）
 
-硬體已到貨，正在通電前檢查，**尚未有任何伺服機上電**。
+硬體已到貨。第一顆伺服機已上電並被掃描到（只讀），**尚未有任何伺服機被命令轉動**。
 
 | 項目 | 狀態 |
 |---|---|
 | 到貨清點 | 五金、線材、驅動板、伺服機已拍照核對；結構件與長度治具尚未核對 |
 | 變壓器 | 標示 5V 3A（符合 SCS0009 的 4.0–7.4V） |
 | 驅動板供電 | VCC–GND 量得 5V（使用者回報，2026-10-04） |
-| Mac 環境與序列埠 | 待建立 |
+| Mac 環境與序列埠 | 已建立：Python 3.12.15、rustypot 1.10.0、`/dev/cu.usbmodem5B790827031` |
+| 驅動板模式與通訊 | USB 模式可用；`scan` 回報 `ID 1  SCS0009`（2026-10-04） |
 | 8 顆伺服機單顆測試、設 ID | 未開始 |
 | 手指組裝、校正、手掌組裝 | 未開始 |
 
-組裝表進度 5 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
+組裝表進度 6 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
 
-**本資料夾目前沒有任何 real-hardware validation。** `tools/servo_tool.py` 只在假匯流排上測過，沒有 experiment ID，也還沒碰過實體伺服機。
+**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan` 在實體伺服機上跑過一次並成功，但那是 bring-up 觀察，沒有 experiment ID；`test`、`setid`、`diag` 仍只在假匯流排上測過。
 
 ## 目錄
 
@@ -81,9 +82,8 @@ pytest right_hand/tests -q      # 2026-10-04：17 passed
 
 ## 接下來
 
-1. Mac 建環境，確認序列埠。
-2. 8 顆伺服機逐一 `scan` → `test` → `setid`（1–8），貼標籤，抓出壞件。
-3. 修舵盤、修樞軸孔，組食指並校正，再做其餘三指。
-4. 手掌組裝、全手測試、外殼。
-5. 建立 8-DOF semantic component IDs 與 manifest，把 bring-up 工具收斂成 hardware adapter。
-6. 用雙目相機看這隻右手：相機是 Waveshare AR0144 Stereo USB Camera (A)，資料在 [`stereo_camera/`](../stereo_camera/README.md)，決策見 [ADR-0005](../docs/adr/0005-stereo-camera-ar0144.md)。
+1. 8 顆伺服機逐一 `scan` → `test` → `setid`（1–8），貼標籤，抓出壞件。
+2. 修舵盤、修樞軸孔，組食指並校正，再做其餘三指。
+3. 手掌組裝、全手測試、外殼。
+4. 建立 8-DOF semantic component IDs 與 manifest，把 bring-up 工具收斂成 hardware adapter。
+5. 用雙目相機看這隻右手：相機是 Waveshare AR0144 Stereo USB Camera (A)，資料在 [`stereo_camera/`](../stereo_camera/README.md)，決策見 [ADR-0005](../docs/adr/0005-stereo-camera-ar0144.md)。
