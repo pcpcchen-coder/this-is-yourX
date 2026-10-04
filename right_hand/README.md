@@ -6,7 +6,7 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 
 ## 目前狀態（2026-10-04）
 
-硬體已到貨。第一顆伺服機已上電並被掃描到（只讀），**尚未有任何伺服機被命令轉動**。
+硬體已到貨。第一顆伺服機已通過掃描與單軸小幅轉動測試，其餘七顆待測。
 
 | 項目 | 狀態 |
 |---|---|
@@ -15,12 +15,12 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 | 驅動板供電 | VCC–GND 量得 5V（使用者回報，2026-10-04） |
 | Mac 環境與序列埠 | 已建立：Python 3.12.15、rustypot 1.10.0、`/dev/cu.usbmodem5B790827031` |
 | 驅動板模式與通訊 | USB 模式可用；`scan` 回報 `ID 1  SCS0009`（2026-10-04） |
-| 8 顆伺服機單顆測試、設 ID | 未開始 |
+| 8 顆伺服機單顆測試、設 ID | 1 / 8：ID 1 測試通過（4.7 V、23 °C、±20° 誤差在 1° 內） |
 | 手指組裝、校正、手掌組裝 | 未開始 |
 
 組裝表進度 6 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
 
-**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan` 在實體伺服機上跑過一次並成功，但那是 bring-up 觀察，沒有 experiment ID；`test`、`setid`、`diag` 仍只在假匯流排上測過。
+**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan` 和 `test` 各在一顆實體伺服機上跑過一次並成功，但那是 bring-up 觀察，沒有 experiment ID；`setid`、`diag` 仍只在假匯流排上測過。
 
 ## 目錄
 
@@ -40,7 +40,8 @@ right_hand/
 ├── photos/2026-10-02_arrival/      # 到貨照片（已縮圖、已移除 EXIF）
 ├── tools/
 │   ├── servo_tool.py               # 人工操作的單軸 bring-up 工具
-│   └── first_scan.sh               # 第一次上電：建環境、找埠、掃描（只讀）
+│   ├── first_scan.sh               # 第一次上電：建環境、找埠、掃描（只讀）
+│   └── assign_id.sh                # 單顆：掃描 → 轉動測試 → 改 ID → 再掃描
 └── tests/
     ├── fake_scs_bus.py             # 假的 SCS 匯流排
     └── test_servo_tool.py
@@ -78,7 +79,7 @@ pytest right_hand/tests -q      # 2026-10-04：17 passed
 - `servo_tool.py` 是給人在工作台上用的 bring-up 工具，不在 AI 控制路徑上。生成式模型不直接下馬達命令；之後的動作一律經 versioned skill 與 Safety Gateway（見根目錄 `AGENTS.md`）。
 - `test` 動作前會檢查：匯流排上只有一顆、電壓在 4.0–7.4V、溫度不超過 60°C；任何一項不符就不開扭力。離開前一定關扭力，包含例外與 Ctrl-C。
 - 變壓器是實體斷電路徑。目前沒有獨立的 E-stop；多軸動作前要補上。
-- 插拔伺服機或線材前先斷電。
+- 插拔伺服機或線材前先斷電。接上時 USB 最後接，拆下時 USB 最先拔，避免熱插變壓器的瞬變打到電腦。
 
 ## 接下來
 
