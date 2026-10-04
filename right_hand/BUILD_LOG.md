@@ -63,10 +63,11 @@
   - 暫行做法：量測完成前不再上電。接下來的修舵盤、組手指到校正前都不需要通電。
 
 - 使用者拍了結構件的照片。目視確認：Hand Plate、Wrist Interface、Top Shell、Soft Shell、長度治具各 1，Proximal Shell、Distal Shell、Link 各 4，另有展示底座。Gimbal、Finger Frame、Proximal、Distal 因重疊無法從照片數清楚，明細在 [`docs/arrival_inspection.md`](docs/arrival_inspection.md)。
+- 使用者手邊有兩支鑽頭（照片對尺）：細的全長約 39–40 mm、粗的約 49 mm，直徑目視約 1.5 mm 與 2 mm，與 DIN 338 的 1.5 / 2.0 mm 標準長度相符。尚未用卡尺量柄徑。舵盤用細的（手冊做法，M2 螺絲自攻），粗的留給 1.4 修樞軸孔。
 
 ### 待辦（下一次接手從這裡開始）
 
 - [ ] 量測並排除 USB 外殼之間的電位差（見上）。
 - [ ] 使用者自行點數 Gimbal ×4、Finger Frame ×8、Proximal ×4、Distal ×4。
-- [ ] 確認修舵盤的工具：斜口鉗、銼刀，以及有沒有 1.5mm 鑽頭。
+- [ ] 確認修舵盤的工具：斜口鉗、銼刀。
 - [ ] 1.1 修舵盤：先做 1 顆試做，確認後再做其餘 7 顆。
