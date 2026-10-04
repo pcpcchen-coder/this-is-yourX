@@ -38,7 +38,8 @@ right_hand/
 │       └── img/                    # 官方組裝手冊對應頁
 ├── photos/2026-10-02_arrival/      # 到貨照片（已縮圖、已移除 EXIF）
 ├── tools/
-│   └── servo_tool.py               # 人工操作的單軸 bring-up 工具
+│   ├── servo_tool.py               # 人工操作的單軸 bring-up 工具
+│   └── first_scan.sh               # 第一次上電：建環境、找埠、掃描（只讀）
 └── tests/
     ├── fake_scs_bus.py             # 假的 SCS 匯流排
     └── test_servo_tool.py
