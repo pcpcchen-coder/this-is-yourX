@@ -6,7 +6,7 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 
 ## 目前狀態（2026-10-04）
 
-硬體已到貨。第一顆伺服機已通過掃描與單軸小幅轉動測試，其餘七顆待測。
+硬體已到貨。兩顆伺服機已通過單軸小幅轉動測試並設好 ID 1、2，其餘六顆待測。
 
 | 項目 | 狀態 |
 |---|---|
@@ -15,12 +15,12 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 | 驅動板供電 | VCC–GND 量得 5V（使用者回報，2026-10-04） |
 | Mac 環境與序列埠 | 已建立：Python 3.12.15、rustypot 1.10.0、`/dev/cu.usbmodem5B790827031` |
 | 驅動板模式與通訊 | USB 模式可用；`scan` 回報 `ID 1  SCS0009`（2026-10-04） |
-| 8 顆伺服機單顆測試、設 ID | 1 / 8：ID 1 測試通過（4.7 V、23 °C、±20° 誤差在 1° 內） |
+| 8 顆伺服機單顆測試、設 ID | 2 / 8：ID 1、2 測試通過（4.7 V、22–23 °C、±20° 誤差在 1° 內）；ID 2 斷電後仍保存 |
 | 手指組裝、校正、手掌組裝 | 未開始 |
 
 組裝表進度 6 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
 
-**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan` 和 `test` 各在一顆實體伺服機上跑過一次並成功，但那是 bring-up 觀察，沒有 experiment ID；`setid`、`diag` 仍只在假匯流排上測過。
+**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid` 已在實體伺服機上跑過並成功，但那是 bring-up 觀察，沒有 experiment ID；`diag` 仍只在假匯流排上測過。
 
 ## 目錄
 
