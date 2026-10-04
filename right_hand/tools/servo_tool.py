@@ -29,6 +29,7 @@ TEMP_MAX_C = 60
 WIGGLE_DEG = (0, 20, -20, 0)
 WIGGLE_SPEED = 3
 WIGGLE_TOLERANCE_DEG = 5.0
+WIGGLE_SETTLE_S = 3.0        # 每一步最多等這麼久讓伺服機到位
 
 
 def open_bus(port):
@@ -173,8 +174,12 @@ def cmd_test(port, sid):
         c.write_goal_speed(sid, WIGGLE_SPEED)
         for target in WIGGLE_DEG:
             c.write_goal_position(sid, math.radians(target))
-            time.sleep(1.0)
-            now = math.degrees(one(c.read_present_position(sid)))
+            # 起始位置可能離中位很遠，所以輪詢到位，不用固定等待時間。
+            for _ in range(int(WIGGLE_SETTLE_S / 0.1)):
+                time.sleep(0.1)
+                now = math.degrees(one(c.read_present_position(sid)))
+                if abs(now - target) < WIGGLE_TOLERANCE_DEG:
+                    break
             err = abs(now - target)
             good = err < WIGGLE_TOLERANCE_DEG
             print("  目標 %+4d°  實際 %+6.1f°  %s" % (target, now, "OK" if good else "偏差大"))
