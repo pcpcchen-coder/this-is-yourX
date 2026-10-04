@@ -18,10 +18,10 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 | 8 顆伺服機單顆測試、設 ID | 8 / 8：ID 1–8 測試通過並完成設定（4.7–5.1 V、22–23 °C）；ID 2 斷電後仍保存，其餘未個別驗證斷電保存 |
 | USB 接地 | **未解決**：USB 線頭金屬殼碰到驅動板 USB 外殼，Mac mini 螢幕就會黑一下；原因待量測 |
 | 零件前處理 | 完成：舵盤、樞軸孔、毛邊、長度治具（樞軸孔手感待組裝時驗證） |
-| 手指組裝 | 食指進行中：手指已裝上伺服機框架（ID 1、2），剩連桿接上 Link |
+| 手指組裝 | 食指機構完成（ID 1、2），舵盤待校正時裝上；其餘三指未開始 |
 | 校正、手掌組裝 | 未開始 |
 
-組裝表進度 18 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
+組裝表進度 20 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
 
 **本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid` 已在實體伺服機上跑過並成功，但那是 bring-up 觀察，沒有 experiment ID；`diag` 仍只在假匯流排上測過。
 
@@ -88,7 +88,7 @@ pytest right_hand/tests -q      # 2026-10-04：17 passed
 ## 接下來
 
 1. 量測並排除 USB 外殼之間的電位差。
-2. 組食指並校正，再做其餘三指。
+2. 組其餘三指；四指逐一校正（需上電，先完成第 1 項）。
 3. 手掌組裝、全手測試、外殼。
 4. 建立 8-DOF semantic component IDs 與 manifest，把 bring-up 工具收斂成 hardware adapter。
 5. 用雙目相機看這隻右手：相機是 Waveshare AR0144 Stereo USB Camera (A)，資料在 [`stereo_camera/`](../stereo_camera/README.md)，決策見 [ADR-0005](../docs/adr/0005-stereo-camera-ar0144.md)。
