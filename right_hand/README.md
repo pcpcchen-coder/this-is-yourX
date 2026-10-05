@@ -4,7 +4,7 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 
 這個資料夾只管右手。之後加入的其他 X（例如雙目視覺鏡頭）各自開資料夾。
 
-## 目前狀態（2026-10-04）
+## 目前狀態（2026-10-05）
 
 硬體已到貨。8 顆伺服機都通過單軸小幅轉動測試並設好 ID 1–8。USB 接地電位差的問題尚未排除（見安全邊界）。
 
@@ -18,10 +18,10 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 | 8 顆伺服機單顆測試、設 ID | 8 / 8：ID 1–8 測試通過並完成設定（4.7–5.1 V、22–23 °C）；ID 2 斷電後仍保存，其餘未個別驗證斷電保存 |
 | USB 接地 | **未解決**：USB 線頭金屬殼碰到驅動板 USB 外殼，Mac mini 螢幕就會黑一下；原因待量測 |
 | 零件前處理 | 完成：舵盤、樞軸孔、毛邊、長度治具（樞軸孔手感待組裝時驗證） |
-| 手指組裝 | 食指機構完成（ID 1、2），舵盤待校正時裝上；其餘三指未開始 |
+| 手指組裝 | 四指機構完成（使用者回報；食指有照片核對，其餘三指的 ID 左右尚未核對），舵盤待校正時裝上 |
 | 校正、手掌組裝 | 未開始 |
 
-組裝表進度 20 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
+組裝表進度 47 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
 
 **本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid` 已在實體伺服機上跑過並成功，但那是 bring-up 觀察，沒有 experiment ID；`diag` 仍只在假匯流排上測過。
 
@@ -88,7 +88,7 @@ pytest right_hand/tests -q      # 2026-10-04：17 passed
 ## 接下來
 
 1. 量測並排除 USB 外殼之間的電位差。
-2. 組其餘三指；四指逐一校正（需上電，先完成第 1 項）。
+2. 四指逐一校正（需上電，先完成第 1 項）。
 3. 手掌組裝、全手測試、外殼。
 4. 建立 8-DOF semantic component IDs 與 manifest，把 bring-up 工具收斂成 hardware adapter。
 5. 雙目視覺鏡頭已採購（感光元件 AR0144），用來讓系統看得到這隻右手。模組型號等細節確認後另開資料夾並補 ADR，見 [`docs/HISTORY.md`](../docs/HISTORY.md)。
