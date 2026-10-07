@@ -4,9 +4,9 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 
 這個資料夾只管右手。其他 X 各自開資料夾，例如雙目相機在 [`stereo_camera/`](../stereo_camera/README.md)。
 
-## 目前狀態（2026-10-05）
+## 目前狀態（2026-10-07）
 
-硬體已到貨。8 顆伺服機都通過單軸小幅轉動測試並設好 ID 1–8。USB 接地電位差的問題尚未排除（見安全邊界）。
+硬體已到貨。8 顆伺服機都通過單軸小幅轉動測試並設好 ID 1–8。四指機構已組好，下一步是逐指校正。USB 黑屏問題以中間加 USB hub 緩解，成因尚未量測（見安全邊界）。
 
 | 項目 | 狀態 |
 |---|---|
@@ -16,14 +16,14 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 | Mac 環境與序列埠 | 已建立：Python 3.12.15、rustypot 1.10.0、`/dev/cu.usbmodem5B790827031` |
 | 驅動板模式與通訊 | USB 模式可用；`scan` 回報 `ID 1  SCS0009`（2026-10-04） |
 | 8 顆伺服機單顆測試、設 ID | 8 / 8：ID 1–8 測試通過並完成設定（4.7–5.1 V、22–23 °C）；ID 2 斷電後仍保存，其餘未個別驗證斷電保存 |
-| USB 接地 | **未解決**：USB 線頭金屬殼碰到驅動板 USB 外殼，Mac mini 螢幕就會黑一下；原因待量測 |
+| USB 接地 | **已緩解，成因未量測**：驅動板改經 USB hub 接 Mac mini 後，螢幕不再受影響（使用者回報，2026-10-07） |
 | 零件前處理 | 完成：舵盤、樞軸孔、毛邊、長度治具（樞軸孔手感待組裝時驗證） |
 | 手指組裝 | 四指機構完成；合照核對奇數 ID 都在右側（偶數標籤未拍到），舵盤待校正時裝上 |
 | 校正、手掌組裝 | 未開始 |
 
 組裝表進度 47 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
 
-**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid` 已在實體伺服機上跑過並成功，但那是 bring-up 觀察，沒有 experiment ID；`diag` 仍只在假匯流排上測過。
+**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid` 已在實體伺服機上跑過並成功，但那是 bring-up 觀察，沒有 experiment ID；`diag`、`center`、`finger` 仍只在假匯流排上測過。
 
 ## 目錄
 
@@ -42,9 +42,10 @@ right_hand/
 │       └── img/                    # 官方組裝手冊對應頁
 ├── photos/2026-10-02_arrival/      # 到貨照片（已縮圖、已移除 EXIF）
 ├── tools/
-│   ├── servo_tool.py               # 人工操作的單軸 bring-up 工具
+│   ├── servo_tool.py               # 人工操作的 bring-up 工具（單顆測試、設 ID、單指校正）
 │   ├── first_scan.sh               # 第一次上電：建環境、找埠、掃描（只讀）
-│   └── assign_id.sh                # 單顆：掃描 → 轉動測試 → 改 ID → 再掃描
+│   ├── assign_id.sh                # 單顆：掃描 → 轉動測試 → 改 ID → 再掃描
+│   └── finger_cal.sh               # 單指校正：回中位裝舵盤、分段開合微調中位
 └── tests/
     ├── fake_scs_bus.py             # 假的 SCS 匯流排
     └── test_servo_tool.py
@@ -66,6 +67,8 @@ python tools/servo_tool.py scan  <PORT>       # 只讀，列出回應的 ID
 python tools/servo_tool.py diag  <PORT>       # 掃不到時用：送 PING 並印出原始位元組
 python tools/servo_tool.py test  <PORT> <ID>  # 單顆、無負載、±20° 低速擺動
 python tools/servo_tool.py setid <PORT> 1 3   # 匯流排上只接一顆時改 ID
+python tools/servo_tool.py center <PORT> 1 2  # 一根手指的兩顆回中位並保持扭力（裝舵盤用）
+python tools/servo_tool.py finger <PORT> 1 2 [中位A 中位B]   # 分段開合一次（微調中位用）
 ```
 
 組裝檢查表：用瀏覽器開 `docs/assembly_checklist/index.html`。離線開啟時，勾選進度只存在該瀏覽器。
@@ -74,21 +77,22 @@ python tools/servo_tool.py setid <PORT> 1 3   # 匯流排上只接一顆時改 I
 
 ```bash
 pip install pytest
-pytest right_hand/tests -q      # 2026-10-04：17 passed
+pytest right_hand/tests -q      # 2026-10-07：36 passed
 ```
 
 ## 安全邊界
 
 - `servo_tool.py` 是給人在工作台上用的 bring-up 工具，不在 AI 控制路徑上。生成式模型不直接下馬達命令；之後的動作一律經 versioned skill 與 Safety Gateway（見根目錄 `AGENTS.md`）。
 - `test` 動作前會檢查：匯流排上只有一顆、電壓在 4.0–7.4V、溫度不超過 60°C；任何一項不符就不開扭力。離開前一定關扭力，包含例外與 Ctrl-C。
+- `center`、`finger` 只接受同一根手指的一對 ID（1 2、3 4、5 6、7 8），匯流排上必須恰好是這兩顆，電壓、溫度條件同上；中位修正限 ±30°。`finger` 以較低速度分段開合，任一步 3 秒內沒到位（誤差 8° 以上）就停止並關扭力。
 - 變壓器是實體斷電路徑。目前沒有獨立的 E-stop；多軸動作前要補上。
 - 插拔伺服機或線材前先斷電。
-- **USB 接地電位差未排除**：變壓器供電時，USB 線頭金屬殼一碰到驅動板 USB 外殼，Mac mini 螢幕就會黑一下（2026-10-04）。兩種接線順序都發生過，目前沒有已知不黑屏的順序。量測完成前不再上電；量測項目見 `BUILD_LOG.md`。
+- **USB 黑屏已用 hub 緩解，成因未量測**：變壓器供電時，USB 線頭金屬殼一碰到驅動板 USB 外殼，Mac mini 螢幕就會黑一下（2026-10-04），兩種接線順序都發生過。2026-10-07 使用者改成驅動板經 USB hub 接 Mac mini，螢幕不再受影響。兩個外殼之間的電位差沒有量過，所以變壓器的漏電大小與絕緣狀況仍未知；驅動板一律經 hub 連接，不要直插 Mac mini。
 
 ## 接下來
 
-1. 量測並排除 USB 外殼之間的電位差。
-2. 四指逐一校正（需上電，先完成第 1 項）。
+1. 四指逐一校正，記下 8 個中位值。
+2. （選做）量測 USB 外殼之間的電位差，確認變壓器漏電在正常範圍。
 3. 手掌組裝、全手測試、外殼。
 4. 建立 8-DOF semantic component IDs 與 manifest，把 bring-up 工具收斂成 hardware adapter。
 5. 用雙目相機看這隻右手：相機是 Waveshare AR0144 Stereo USB Camera (A)，資料在 [`stereo_camera/`](../stereo_camera/README.md)，決策見 [ADR-0005](../docs/adr/0005-stereo-camera-ar0144.md)。

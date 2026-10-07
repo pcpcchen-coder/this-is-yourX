@@ -11,8 +11,14 @@
   python servo_tool.py diag  PORT            掃不到時用：送 ping 並印出收到的原始位元組（只讀）
   python servo_tool.py test  PORT ID         讀狀態並小幅擺動一次（單顆、低速）
   python servo_tool.py setid PORT OLD NEW    改 ID（匯流排上只能接一顆）
+  python servo_tool.py center PORT A B [MID_A MID_B]
+                                             一根手指的兩顆回中位並保持扭力，用來裝舵盤
+  python servo_tool.py finger PORT A B [MID_A MID_B]
+                                             一根手指分段開合一次，用來微調中位
 
 `test` 只用在還沒裝進手指、出力軸沒有負載的伺服機上。
+`center`、`finger` 一次只接一根手指的兩顆：A 是奇數 ID、B 是 A+1。MID 是中位修正，
+單位是度，預設 0。
 """
 import glob
 import math
@@ -30,6 +36,16 @@ WIGGLE_DEG = (0, 20, -20, 0)
 WIGGLE_SPEED = 3
 WIGGLE_TOLERANCE_DEG = 5.0
 WIGGLE_SETTLE_S = 3.0        # 每一步最多等這麼久讓伺服機到位
+
+# 手指校正。奇數 ID 與偶數 ID 鏡像安裝，所以同一個動作兩顆角度正負相反。
+FINGER_PAIRS = ((1, 2), (3, 4), (5, 6), (7, 8))
+MID_LIMIT_DEG = 30.0         # 中位修正超過這個值，多半是舵盤裝錯齒，不是該用修正補的
+CENTER_SPEED = 3
+FINGER_SPEED = 1.5           # 帶著手指動，比無負載測試慢一半
+FINGER_TOLERANCE_DEG = 8.0
+FINGER_SETTLE_S = 3.0
+FINGER_OPEN_DEG = -30        # 奇數 ID 的角度；偶數 ID 取負號
+FINGER_CLOSE_STEPS_DEG = (0, 30, 60, 90)
 
 
 def open_bus(port):
@@ -195,6 +211,123 @@ def cmd_test(port, sid):
     return 0 if ok else 1
 
 
+def wait_enter(msg):
+    print(msg, flush=True)
+    input()
+
+
+def _pair_ok(a, b, mid_a, mid_b):
+    if (a, b) not in FINGER_PAIRS:
+        print("ID 要是同一根手指的一對：1 2、3 4、5 6 或 7 8（奇數在前）。")
+        return False
+    if abs(mid_a) > MID_LIMIT_DEG or abs(mid_b) > MID_LIMIT_DEG:
+        print("中位修正要在 ±%d° 以內。超過的話先把舵盤拆下來換一齒重裝。" % MID_LIMIT_DEG)
+        return False
+    return True
+
+
+def _open_pair(port, a, b):
+    """確認匯流排上恰好是這兩顆，而且電壓、溫度正常。不符合就回傳 None，不開扭力。"""
+    c = open_bus(port)
+    found = scan(c)
+    if sorted(found) != [a, b]:
+        print("匯流排上看到 %s，預期恰好是 [%d, %d]。一次只接一根手指的兩顆。" % (list(found), a, b))
+        return None
+    for sid in (a, b):
+        volt = one(c.read_present_voltage(sid)) / 10.0
+        temp = one(c.read_present_temperature(sid))
+        print("ID %d  電壓 %.1f V  溫度 %d °C" % (sid, volt, temp))
+        if not (VOLT_MIN <= volt <= VOLT_MAX):
+            print("電壓不在 %.1f–%.1f V 範圍內，不動作。先檢查電源。" % (VOLT_MIN, VOLT_MAX))
+            return None
+        if temp > TEMP_MAX_C:
+            print("溫度超過 %d °C，不動作。" % TEMP_MAX_C)
+            return None
+    return c
+
+
+def _move_pair(c, a, b, deg_a, deg_b, tolerance):
+    """兩顆一起走到目標，輪詢到位。回傳 (是否都到位, a 的實際角度, b 的實際角度)。"""
+    c.write_goal_position(a, math.radians(deg_a))
+    c.write_goal_position(b, math.radians(deg_b))
+    now_a = now_b = None
+    for _ in range(int(FINGER_SETTLE_S / 0.1)):
+        time.sleep(0.1)
+        now_a = math.degrees(one(c.read_present_position(a)))
+        now_b = math.degrees(one(c.read_present_position(b)))
+        if abs(now_a - deg_a) < tolerance and abs(now_b - deg_b) < tolerance:
+            return True, now_a, now_b
+    return False, now_a, now_b
+
+
+def _torque_off(c, ids):
+    ok = True
+    for sid in ids:
+        try:
+            c.write_torque_enable(sid, 0)
+        except Exception as e:
+            print("警告：ID %d 關扭力失敗（%s）。請直接拔掉變壓器。" % (sid, e))
+            ok = False
+    return ok
+
+
+def cmd_center(port, a, b, mid_a=0.0, mid_b=0.0):
+    """兩顆回到中位並保持扭力，讓人把舵盤裝上去；按 Enter 後關扭力。"""
+    if not _pair_ok(a, b, mid_a, mid_b):
+        return 1
+    c = _open_pair(port, a, b)
+    if c is None:
+        return 1
+    print("開扭力，ID %d → %+.1f°，ID %d → %+.1f° …" % (a, mid_a, b, mid_b))
+    ok = False
+    try:
+        c.write_torque_enable(a, 1)
+        c.write_torque_enable(b, 1)
+        c.write_goal_speed(a, CENTER_SPEED)
+        c.write_goal_speed(b, CENTER_SPEED)
+        ok, now_a, now_b = _move_pair(c, a, b, mid_a, mid_b, WIGGLE_TOLERANCE_DEG)
+        print("  ID %d 實際 %+6.1f°   ID %d 實際 %+6.1f°   %s" % (a, now_a, b, now_b, "OK" if ok else "沒到位"))
+        if ok:
+            wait_enter("兩顆已在中位並保持扭力。現在裝舵盤；裝好後按 Enter 關扭力。")
+    finally:
+        ok = _torque_off(c, (a, b)) and ok
+    print("結果：" + ("完成，扭力已關" if ok else "異常，沒有到中位"))
+    return 0 if ok else 1
+
+
+def cmd_finger(port, a, b, mid_a=0.0, mid_b=0.0):
+    """一根手指分段開合一次：張開 → 中位 → 分段閉合（停住等人看）→ 張開 → 中位。"""
+    if not _pair_ok(a, b, mid_a, mid_b):
+        return 1
+    c = _open_pair(port, a, b)
+    if c is None:
+        return 1
+    wait_enter("手指周圍淨空、手不要放在指節之間。按 Enter 開始，Ctrl-C 隨時中止。")
+    ok = True
+    try:
+        c.write_torque_enable(a, 1)
+        c.write_torque_enable(b, 1)
+        c.write_goal_speed(a, FINGER_SPEED)
+        c.write_goal_speed(b, FINGER_SPEED)
+        plan = [("張開", FINGER_OPEN_DEG)]
+        plan += [("閉合 %d°" % d if d else "中位", d) for d in FINGER_CLOSE_STEPS_DEG]
+        plan += [("張開", FINGER_OPEN_DEG), ("中位", 0)]
+        for label, d in plan:
+            reached, now_a, now_b = _move_pair(c, a, b, mid_a + d, mid_b - d, FINGER_TOLERANCE_DEG)
+            print("  %-8s ID %d 目標 %+6.1f° 實際 %+6.1f°   ID %d 目標 %+6.1f° 實際 %+6.1f°   %s" % (
+                label, a, mid_a + d, now_a, b, mid_b - d, now_b, "OK" if reached else "卡住"))
+            if not reached:
+                print("沒有到位，立刻關扭力。檢查連桿、舵盤有沒有互卡，或手指有沒有頂到東西。")
+                ok = False
+                break
+            if d == FINGER_CLOSE_STEPS_DEG[-1]:
+                wait_enter("手指已閉合。看兩個舵盤的耳朵有沒有對齊伺服機中線，看完按 Enter 張開。")
+    finally:
+        ok = _torque_off(c, (a, b)) and ok
+    print("結果：" + ("完成，扭力已關" if ok else "異常，扭力已關"))
+    return 0 if ok else 1
+
+
 def cmd_setid(port, old, new):
     if not (1 <= new <= 253):
         print("新 ID 要在 1–253 之間。")
@@ -246,6 +379,13 @@ def main(argv):
             return cmd_test(argv[2], int(argv[3]))
         if cmd == "setid" and len(argv) == 5:
             return cmd_setid(argv[2], int(argv[3]), int(argv[4]))
+        if cmd in ("center", "finger") and len(argv) in (5, 7):
+            mids = [float(x) for x in argv[5:7]] if len(argv) == 7 else [0.0, 0.0]
+            fn = cmd_center if cmd == "center" else cmd_finger
+            return fn(argv[2], int(argv[3]), int(argv[4]), *mids)
+    except KeyboardInterrupt:
+        print("\n已中止。")
+        return 130
     except Exception as e:
         print("錯誤：%s" % e)
         return 1

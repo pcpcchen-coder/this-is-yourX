@@ -66,16 +66,15 @@
 
 ## 校正流程
 
-官方腳本在上游 repo 的 `PythonExample/`，需要 `rustypot` 與 `numpy`。
+本 repo 用 `tools/finger_cal.sh`（包 `servo_tool.py` 的 `center`、`finger`）取代上游 `PythonExample/` 的兩支腳本。差別：不用改原始碼裡的埠與 ID、速度較低、分段開合、沒到位就停、結束一定關扭力。上游的 `AmazingHand_FingerTest.py` 只對 ID 1 開扭力，直接用在其他手指會有一顆沒出力。
 
-1. `AmazingHand_Hand_FingerMiddlePos.py`：改 `serial_port`、`ID_1`、`ID_2`，執行後兩顆回到中位。
-2. 伺服機保持在中位，裝上兩個舵盤，位置照手冊第 22 頁，鎖 M2x4。
-3. `AmazingHand_FingerTest.py`：同樣改埠與 ID。手指閉合時停下，看舵盤是否對齊伺服機中線，沒對齊就調 `MiddlePos`（單位是度）再試。左右兩顆鏡像安裝，加減方向不直觀，一次改 2–3 度。
-4. 記下兩個中位值。四根手指共 8 個值，最後填進 `AmazingHand_Demo.py` 的 `MiddlePos`；右手 `Side = 1`。
+一次只接一根手指的兩顆（奇數 ID、偶數 ID）。
 
-已知問題：`AmazingHand_FingerTest.py` 的扭力啟用寫死成 `write_torque_enable(1, 1)`，只開 ID 1。校正其他手指時要改成對 `ID_1`、`ID_2` 各開一次。（讀上游原始碼確認，2026-10-02）
-
-腳本預設 `serial_port="COM11"`、鮑率 1000000。macOS 的埠名是 `/dev/cu.usbmodem…` 這類。
+1. `bash right_hand/tools/finger_cal.sh center 1 2`：兩顆回到中位並保持扭力。
+2. 扭力保持時裝上兩個舵盤：兩個耳朵各朝外側、連成一條水平線，照手冊第 22 頁；齒是一格一格的，選最接近的那一齒。鎖 M2x4，再按 Enter 關扭力。
+3. `bash right_hand/tools/finger_cal.sh finger 1 2`：分段開合一次，手指閉合時會停住。看兩個舵盤的耳朵有沒有對齊伺服機中線（手冊第 23 頁）。
+4. 沒對齊就帶中位修正再跑：`… finger 1 2 3 0` 表示 ID 1 的中位 +3°、ID 2 不變。左右兩顆鏡像安裝，加減方向不直觀，一次改 2–3°。修正超過 ±30° 代表舵盤裝錯齒，拆下重裝。
+5. 記下兩個中位值。四根手指共 8 個值，最後填進全手程式的 `MiddlePos`；右手 `Side = 1`。
 
 ## 來源
 

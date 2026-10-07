@@ -160,10 +160,10 @@ const PHASES=[
   {id:'s2_9',t:'連桿接上 Link',d:'兩支連桿的自由端球頭套到 Link 橫桿兩端，舵盤朝向伺服機出力軸。鎖上 M2 螺帽，碰到後再多半圈；會鬆就點膠。',w:'舵盤先不要鎖到伺服機上，校正時才鎖。',pg:[20]}
  ]},
  {id:'p3',no:'3',title:'單指校正',per:true,note:'每根手指校正完才裝上手掌，裝上去之後很難再調舵盤。',steps:[
-  {id:'s3_1',t:'兩顆接上同一匯流排',d:'這根手指的兩顆伺服機接到同一個分線板，再接到驅動板。確認兩個 ID 都掃得到。',pg:[21]},
-  {id:'s3_2',t:'伺服機回中位',d:'編輯 <code>AmazingHand_Hand_FingerMiddlePos.py</code>：<code>serial_port</code> 改成你的埠，<code>ID_1</code>、<code>ID_2</code> 改成這根手指的 ID。執行後兩顆會轉到中位。',pg:[22]},
-  {id:'s3_3',t:'裝上舵盤',d:'伺服機保持在中位，把兩個舵盤套上出力軸，位置盡量照圖（兩顆舵盤螺絲連成一條水平線），鎖上 M2x4。',pg:[22]},
-  {id:'s3_4',t:'微調中位',d:'編輯 <code>AmazingHand_FingerTest.py</code>，同樣改埠和 ID，並把 <code>write_torque_enable(1, 1)</code> 改成對 <code>ID_1</code>、<code>ID_2</code> 各開一次。執行後在手指閉合時停下，看舵盤是否對齊伺服機中線；沒對齊就調 <code>MiddlePos</code>（單位是度）再試。',w:'左右兩顆是鏡像安裝，加減方向不直觀，一次改 2–3 度來回試。',pg:[23]},
+  {id:'s3_1',t:'兩顆接上同一匯流排',d:'這根手指的兩顆伺服機接到同一個分線板，再接到驅動板。匯流排上只接這兩顆。驅動板經 USB hub 接電腦。',pg:[21]},
+  {id:'s3_2',t:'伺服機回中位',d:'執行 <code>bash right_hand/tools/finger_cal.sh center &lt;奇數 ID&gt; &lt;偶數 ID&gt;</code>。兩顆會轉到中位並保持扭力，等你裝舵盤。',pg:[22]},
+  {id:'s3_3',t:'裝上舵盤',d:'伺服機保持在中位，把兩個舵盤套上出力軸：兩個耳朵各朝外側、連成一條水平線，選最接近的那一齒。鎖上 M2x4，再按 Enter 關扭力。',pg:[22]},
+  {id:'s3_4',t:'微調中位',d:'執行 <code>bash right_hand/tools/finger_cal.sh finger &lt;奇數 ID&gt; &lt;偶數 ID&gt; [中位A 中位B]</code>。手指會分段開合一次，閉合時停住；看舵盤耳朵是否對齊伺服機中線，沒對齊就改中位值再跑。',w:'左右兩顆鏡像安裝，加減方向不直觀，一次改 2–3 度。修正超過 ±30° 代表舵盤裝錯齒，拆下重裝。',pg:[23]},
   {id:'s3_5',t:'記下中位值',d:'把這兩個數字填進下面的表格。',pg:[24]}
  ]},
  {id:'p4',no:'4',title:'手掌組裝',note:'Seeed 套件把手冊裡 6mm、8mm 的自攻螺絲統一成約 7mm。',steps:[
