@@ -21,11 +21,11 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 | 手指組裝 | 四指機構完成；合照核對奇數 ID 都在右側（偶數標籤未拍到），舵盤待校正時裝上 |
 | 校正 | 四指完成，8 個中位修正都是 0（目視判定） |
 | 手掌組裝 | 完成：8 顆已串接，全手輪流開合一次，四指都到閉合 90°（靜止讀值比目標少 0.4–2.1°） |
-| 外殼 | 記為完成（使用者口頭回報，無照片） |
+| 外殼 | 軟掌殼已裝（照片）；上蓋依使用者口頭回報記為完成 |
 
 組裝表進度 75 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
 
-**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid`、`center`、`finger`、`hand` 已在實體伺服機上跑過並完成動作，但那是 bring-up 觀察，沒有 experiment ID；`diag`、`gesture` 仍只在假匯流排上測過。
+**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid`、`center`、`finger`、`hand` 已在實體伺服機上跑過並完成動作，但那是 bring-up 觀察，沒有 experiment ID；`gesture ok` 也在實體上跑過一次，姿態方向正確，但拇指與食指的指尖沒有碰到，角度待調。`diag` 仍只在假匯流排上測過。
 
 ## 目錄
 
