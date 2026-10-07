@@ -1,21 +1,33 @@
 #!/usr/bin/env bash
-# 一根手指的校正：兩顆回中位（裝舵盤），或分段開合一次（微調中位）。
-# 匯流排上只能接這根手指的兩顆。
+# 單指校正與全手測試。都是人在工作台上操作的工具。
+#   center：一根手指的兩顆回中位並保持扭力（裝舵盤用）。匯流排上只接這兩顆。
+#   finger：一根手指分段開合一次（微調中位用）。匯流排上只接這兩顆。
+#   hand  ：8 顆全接，四根手指輪流開合一次。要能隨手切斷伺服機電源。
 # 用法：bash right_hand/tools/finger_cal.sh center <奇數 ID> <偶數 ID> [中位A 中位B]
 #       bash right_hand/tools/finger_cal.sh finger <奇數 ID> <偶數 ID> [中位A 中位B]
+#       bash right_hand/tools/finger_cal.sh hand [中位1 … 中位8]
 set -u
 cd "$(dirname "$0")/.." || exit 1
-MODE="${1:-}"; A="${2:-}"; B="${3:-}"
+MODE="${1:-}"
 case "$MODE" in
-  center|finger) ;;
-  *) echo "用法：bash right_hand/tools/finger_cal.sh <center|finger> <奇數 ID> <偶數 ID> [中位A 中位B]"; exit 1 ;;
+  center|finger)
+    [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "要給兩個 ID，例如：bash right_hand/tools/finger_cal.sh ${MODE} 1 2"; exit 1; }
+    [ "$#" = 3 ] || [ "$#" = 5 ] || { echo "中位修正要一次給兩個，例如：bash right_hand/tools/finger_cal.sh ${MODE} $2 $3 3 0"; exit 1; }
+    TAG="${MODE}_$2_$3" ;;
+  hand)
+    [ "$#" = 1 ] || [ "$#" = 9 ] || { echo "中位修正要一次給 8 個（ID 1 到 8），或都不給。"; exit 1; }
+    TAG="hand" ;;
+  *)
+    echo "用法：bash right_hand/tools/finger_cal.sh <center|finger> <奇數 ID> <偶數 ID> [中位A 中位B]"
+    echo "      bash right_hand/tools/finger_cal.sh hand [中位1 … 中位8]"
+    exit 1 ;;
 esac
-[ -n "$A" ] && [ -n "$B" ] || { echo "要給兩個 ID，例如：bash right_hand/tools/finger_cal.sh ${MODE} 1 2"; exit 1; }
+shift
 PY=.venv/bin/python
 [ -x "$PY" ] || { echo "還沒有 Python 環境，先執行：bash right_hand/tools/first_scan.sh"; exit 1; }
 
 mkdir -p logs
-LOG="logs/finger_${MODE}_${A}_${B}_$(date +%Y%m%d_%H%M%S).log"
+LOG="logs/finger_${TAG}_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee "$LOG") 2>&1
 
 PORTS="$($PY tools/servo_tool.py ports)" || { echo "$PORTS"; exit 1; }
@@ -25,12 +37,8 @@ if [ "$(printf '%s\n' "$PORTS" | wc -l | tr -d ' ')" != "1" ]; then
   exit 1
 fi
 
-echo "== ${MODE} ${A} ${B} ${4:-0} ${5:-0}  埠 ${PORTS}"
-if [ -n "${4:-}" ] && [ -n "${5:-}" ]; then
-  $PY -u tools/servo_tool.py "$MODE" "$PORTS" "$A" "$B" "$4" "$5"
-else
-  $PY -u tools/servo_tool.py "$MODE" "$PORTS" "$A" "$B"
-fi
+echo "== ${MODE} $*  埠 ${PORTS}"
+$PY -u tools/servo_tool.py "$MODE" "$PORTS" "$@"
 RC=$?
 echo "== 結束（代碼 ${RC}）。紀錄：right_hand/${LOG}"
 exit "${RC}"

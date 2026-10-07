@@ -171,8 +171,8 @@ const PHASES=[
   {id:'s4_2',t:'中指、無名指',d:'中指在中間、無名指在右，各鎖 3 顆。',pg:[30]},
   {id:'s4_3',t:'拇指裝上 Wrist interface',d:'鎖 3 顆。線走內側（手指那一側），不要夾到。',pg:[31]},
   {id:'s4_4',t:'手腕與手掌合體',d:'拇指的線穿過 Hand plate 剩下的開口，Wrist interface 和 Hand plate 鎖 4 顆。',pg:[32]},
-  {id:'s4_5',t:'串接 8 顆伺服機',d:'全部接到同一條匯流排。每根手指的兩顆先進一個分線板，再兩兩合併，之後單指測試比較方便。',pg:[33]},
-  {id:'s4_6',t:'全手測試',d:'把 8 個中位值填進 <code>AmazingHand_Demo.py</code> 的 <code>MiddlePos</code>，設定 <code>Side</code>，改 <code>serial_port</code>，執行 demo。',w:'第一次跑時手放在電源旁，動作異常立刻斷電。'}
+  {id:'s4_5',t:'串接 8 顆伺服機',d:'全部接到同一條匯流排。手冊的接法是 8 片分線板串成一串：每片插 1 顆伺服機，另外兩個插座用對接線連到前後兩片，最後一片空出的插座接驅動板。',w:'斷電再插拔。分線板背面焊點裸露，不要碰到金屬。',pg:[33]},
+  {id:'s4_6',t:'全手測試',d:'執行 <code>bash right_hand/tools/finger_cal.sh hand</code>。8 顆都要在線；先全部張開，再讓食指、中指、無名指、拇指輪流分段閉合再張開，一次只動一根。',w:'變壓器接在有開關的延長線上，第一次跑時手放在開關上，動作異常立刻斷電。'}
  ]},
  {id:'p5',no:'5',title:'外殼',steps:[
   {id:'s5_1',t:'軟掌殼',d:'從拇指開口套入，殼的耳片搭在 Hand plate 上面。先鎖 Hand plate 上的 2 顆，再鎖 Wrist interface 上的 4 顆。',pg:[35]},
