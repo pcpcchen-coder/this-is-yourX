@@ -19,10 +19,10 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 | USB 接地 | **已緩解，成因未量測**：驅動板改經 USB hub 接 Mac mini 後，螢幕不再受影響（使用者回報，2026-10-07） |
 | 零件前處理 | 完成：舵盤、樞軸孔、毛邊、長度治具（樞軸孔手感待組裝時驗證） |
 | 手指組裝 | 四指機構完成；合照核對奇數 ID 都在右側（偶數標籤未拍到），舵盤待校正時裝上 |
-| 校正 | 食指完成（中位值 ID 1 = 0、ID 2 = 0）；其餘三指未開始 |
+| 校正 | 食指、中指完成（中位值 ID 1–4 都是 0）；無名指、拇指未做 |
 | 手掌組裝 | 未開始 |
 
-組裝表進度 52 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
+組裝表進度 57 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
 
 **本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid`、`center`、`finger` 已在實體伺服機上跑過並完成動作，但那是 bring-up 觀察，沒有 experiment ID；`diag` 仍只在假匯流排上測過。
 
