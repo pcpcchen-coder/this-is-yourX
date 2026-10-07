@@ -172,11 +172,14 @@ class Enter:
 
     def __init__(self, servos, raise_on=None):
         self.servos, self.raise_on, self.seen = servos, raise_on, []
+        self.timeouts, self.pressed = [], True
 
-    def __call__(self, msg):
+    def __call__(self, msg, timeout=None):
         self.seen.append([s.mem[ADDR_TORQUE] for s in self.servos])
+        self.timeouts.append(timeout)
         if self.raise_on == len(self.seen):
             raise KeyboardInterrupt
+        return self.pressed
 
 
 @pytest.fixture
@@ -457,3 +460,92 @@ def test_hand_applies_per_servo_middle_offsets(monkeypatch):
     # 最後一個目標是張開：ID 1 是 mid-30、ID 2 是 mid+30；修正值各自往自己的方向平移
     assert servos[0].goal_history[-1] > servos[2].goal_history[-1]
     assert servos[1].goal_history[-1] < servos[3].goal_history[-1]
+
+
+# --- gesture：固定手勢 ----------------------------------------------------
+
+def test_gesture_ok_opens_poses_in_order_holds_then_returns_in_reverse(monkeypatch, capsys):
+    servos, enter = make_hand(monkeypatch)
+    with FakeBus(servos) as bus:
+        assert run("gesture", bus.port, "ok") == 0
+        order = goal_order_after_engage(bus)
+    assert order == (list(range(1, 9))                      # 全部張開
+                     + [3, 4, 5, 6, 1, 2, 7, 8]             # 中指、無名指、食指、拇指
+                     + [7, 8, 1, 2, 5, 6, 3, 4])            # 反序收回
+    assert enter.seen == [[0] * 8, [1] * 8]                  # 開始前沒扭力；停住時 8 顆都有
+    assert enter.timeouts == [None, servo_tool.HOLD_MAX_S]   # 停住那次有上限
+    assert all(sv.torque_history == [1, 0] for sv in servos)
+    pose = {sv.sid: sv.goal_history[2] for sv in servos}     # [停在原地, 張開, 手勢, 張開]
+    assert pose[1] > MID_RAW > pose[2]                        # 食指彎曲
+    assert pose[7] > MID_RAW and pose[8] > MID_RAW            # 拇指兩顆同向：彎曲加側擺
+    assert all(sv.goal_history[-1] == sv.goal_history[1] for sv in servos)   # 最後回到張開
+    assert "完成，扭力已關" in capsys.readouterr().out
+
+
+def test_gesture_returns_by_itself_when_nobody_presses_enter(monkeypatch, capsys):
+    servos, enter = make_hand(monkeypatch)
+    enter.pressed = False
+    with FakeBus(servos) as bus:
+        assert run("gesture", bus.port, "ok") == 0
+    assert all(sv.torque_history == [1, 0] for sv in servos)
+    assert "自動收回" in capsys.readouterr().out
+
+
+def test_gesture_rejects_an_unknown_name_without_touching_the_bus(monkeypatch, capsys):
+    servos, enter = make_hand(monkeypatch)
+    with FakeBus(servos) as bus:
+        assert run("gesture", bus.port, "fist") == 1
+        assert bus.writes == []
+    assert enter.seen == [] and "沒有" in capsys.readouterr().out
+
+
+def test_gesture_refuses_unless_exactly_ids_1_to_8_answer(monkeypatch):
+    servos, enter = make_hand(monkeypatch, [FakeServo(i) for i in range(1, 8)])
+    with FakeBus(servos) as bus:
+        assert run("gesture", bus.port, "ok") == 1
+        assert bus.writes == []
+    assert enter.seen == []
+
+
+def test_gesture_refuses_a_pose_that_offsets_push_out_of_range(monkeypatch):
+    servos, _ = make_hand(monkeypatch)
+    monkeypatch.setitem(servo_tool.GESTURES, "far", {"label": "far", "order": (1,), "pose": {1: (90, -90)}})
+    with FakeBus(servos) as bus:
+        assert servo_tool.cmd_gesture(bus.port, "far", [10, 0, 0, 0, 0, 0, 0, 0]) == 1
+        assert bus.writes == []
+
+
+def test_gesture_stops_without_holding_when_the_thumb_cannot_reach_the_pose(monkeypatch, capsys):
+    servos = [FakeServo(i, travel=(300, 600) if i == 7 else None) for i in range(1, 9)]
+    _, enter = make_hand(monkeypatch, servos)
+    with FakeBus(servos) as bus:
+        assert run("gesture", bus.port, "ok") == 1
+    assert len(enter.seen) == 1                               # 沒有進到「停住」
+    assert all(sv.torque_history[-1] == 0 for sv in servos)
+    assert "卡住" in capsys.readouterr().out
+
+
+def test_gesture_releases_torque_on_ctrl_c_while_holding(monkeypatch):
+    servos, _ = make_hand(monkeypatch, raise_on=2)
+    with FakeBus(servos) as bus:
+        assert run("gesture", bus.port, "ok") == 130
+    assert all(sv.torque_history == [1, 0] for sv in servos)
+
+
+def test_every_gesture_in_the_table_is_complete_and_within_limits():
+    for name, g in servo_tool.GESTURES.items():
+        assert sorted(g["order"]) == [1, 3, 5, 7], name      # 四根手指各出現一次
+        assert set(g["pose"]) == {1, 3, 5, 7}, name
+        for a, b in g["pose"].values():
+            assert abs(a) <= servo_tool.SERVO_LIMIT_DEG - servo_tool.MID_LIMIT_DEG, name
+            assert abs(b) <= servo_tool.SERVO_LIMIT_DEG - servo_tool.MID_LIMIT_DEG, name
+
+
+def test_wait_enter_with_timeout_reports_whether_enter_was_pressed(monkeypatch):
+    r, w = os.pipe()
+    with os.fdopen(r) as reader:
+        monkeypatch.setattr(servo_tool.sys, "stdin", reader)
+        assert servo_tool.wait_enter("x", timeout=0.05) is False
+        os.write(w, b"\n")
+        assert servo_tool.wait_enter("x", timeout=1) is True
+    os.close(w)

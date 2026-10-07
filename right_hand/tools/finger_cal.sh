@@ -3,9 +3,11 @@
 #   center：一根手指的兩顆回中位並保持扭力（裝舵盤用）。匯流排上只接這兩顆。
 #   finger：一根手指分段開合一次（微調中位用）。匯流排上只接這兩顆。
 #   hand  ：8 顆全接，四根手指輪流開合一次。要能隨手切斷伺服機電源。
+#   gesture：8 顆全接，比一個固定手勢、停住、再張開。目前只有 ok。
 # 用法：bash right_hand/tools/finger_cal.sh center <奇數 ID> <偶數 ID> [中位A 中位B]
 #       bash right_hand/tools/finger_cal.sh finger <奇數 ID> <偶數 ID> [中位A 中位B]
 #       bash right_hand/tools/finger_cal.sh hand [中位1 … 中位8]
+#       bash right_hand/tools/finger_cal.sh gesture ok [中位1 … 中位8]
 set -u
 cd "$(dirname "$0")/.." || exit 1
 MODE="${1:-}"
@@ -17,9 +19,14 @@ case "$MODE" in
   hand)
     [ "$#" = 1 ] || [ "$#" = 9 ] || { echo "中位修正要一次給 8 個（ID 1 到 8），或都不給。"; exit 1; }
     TAG="hand" ;;
+  gesture)
+    [ "$#" = 2 ] || [ "$#" = 10 ] || { echo "用法：bash right_hand/tools/finger_cal.sh gesture ok [中位1 … 中位8]"; exit 1; }
+    case "$2" in *[!a-z0-9_]*|"") echo "手勢名稱只能是小寫英數，例如 ok"; exit 1 ;; esac
+    TAG="gesture_$2" ;;
   *)
     echo "用法：bash right_hand/tools/finger_cal.sh <center|finger> <奇數 ID> <偶數 ID> [中位A 中位B]"
     echo "      bash right_hand/tools/finger_cal.sh hand [中位1 … 中位8]"
+    echo "      bash right_hand/tools/finger_cal.sh gesture ok [中位1 … 中位8]"
     exit 1 ;;
 esac
 shift

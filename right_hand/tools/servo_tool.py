@@ -17,14 +17,18 @@
                                              一根手指分段開合一次，用來微調中位
   python servo_tool.py hand   PORT [MID_1 … MID_8]
                                              全手：8 顆都接上，四根手指輪流開合一次
+  python servo_tool.py gesture PORT NAME [MID_1 … MID_8]
+                                             全手比一個固定手勢、停住、再張開。NAME 目前只有 ok
 
 `test` 只用在還沒裝進手指、出力軸沒有負載的伺服機上。
 `center`、`finger` 一次只接一根手指的兩顆：A 是奇數 ID、B 是 A+1。MID 是中位修正，
 單位是度，預設 0。`hand` 要 ID 1–8 全部在線；一次只動一根手指，其餘保持張開。
-執行 `hand` 時，人要能隨手切斷伺服機電源（例如變壓器接在有開關的延長線上）。
+`gesture` 的姿態是寫死在這個檔案裡的固定表，不接受任意角度。
+執行 `hand`、`gesture` 時，人要能隨手切斷伺服機電源（例如變壓器接在有開關的延長線上）。
 """
 import glob
 import math
+import select
 import sys
 import time
 
@@ -52,6 +56,18 @@ FINGER_OPEN_DEG = -30        # 奇數 ID 的角度；偶數 ID 取負號
 FINGER_CLOSE_STEPS_DEG = (0, 30, 60, 90)
 HAND_IDS = tuple(range(1, 9))
 FINGER_NAMES = {1: "食指", 3: "中指", 5: "無名指", 7: "拇指"}
+
+# 固定手勢（右手）。key 是每根手指的奇數 ID，值是 (奇數 ID 角度, 偶數 ID 角度)，單位度，
+# 不含中位修正。兩顆角度不對稱時手指會同時彎曲並側擺。order 是擺出手勢時的先後；
+# 收回時反過來。會互相接觸的手指排在最後動。
+SERVO_LIMIT_DEG = 95.0       # 任何一顆的目標（含中位修正）都不得超出 ±95°
+HOLD_MAX_S = 30              # 手勢最多停這麼久，沒按 Enter 也會自己收回
+GESTURES = {
+    # 角度取自上游 AmazingHand_Demo.py 的 Perfect()（右手）。
+    "ok": {"label": "OK",
+           "order": (3, 5, 1, 7),
+           "pose": {1: (50, -50), 3: (0, 0), 5: (-20, 20), 7: (65, 12)}},
+}
 
 
 def open_bus(port):
@@ -217,9 +233,17 @@ def cmd_test(port, sid):
     return 0 if ok else 1
 
 
-def wait_enter(msg):
+def wait_enter(msg, timeout=None):
+    """等人按 Enter。給了 timeout（秒）就最多等這麼久；回傳是否真的按了。"""
     print(msg, flush=True)
-    input()
+    if timeout is None:
+        input()
+        return True
+    ready, _, _ = select.select([sys.stdin], [], [], timeout)
+    if ready:
+        sys.stdin.readline()
+        return True
+    return False
 
 
 def _pair_ok(a, b, mid_a, mid_b):
@@ -344,10 +368,15 @@ def cmd_finger(port, a, b, mid_a=0.0, mid_b=0.0):
 
 
 def _step(c, a, b, mid_a, mid_b, label, d):
-    """一根手指走到一個姿態並印出結果。回傳是否到位。"""
-    reached, now_a, now_b = _move_pair(c, a, b, mid_a + d, mid_b - d, FINGER_TOLERANCE_DEG)
+    """一根手指走到一個對稱姿態（奇數 +d、偶數 -d）並印出結果。回傳是否到位。"""
+    return _step_to(c, a, b, mid_a + d, mid_b - d, label)
+
+
+def _step_to(c, a, b, deg_a, deg_b, label):
+    """一根手指的兩顆各走到指定角度並印出結果。回傳是否到位。"""
+    reached, now_a, now_b = _move_pair(c, a, b, deg_a, deg_b, FINGER_TOLERANCE_DEG)
     print("  %-8s ID %d 目標 %+6.1f° 實際 %+6.1f°   ID %d 目標 %+6.1f° 實際 %+6.1f°   %s" % (
-        label, a, mid_a + d, now_a, b, mid_b - d, now_b, "OK" if reached else "卡住"))
+        label, a, deg_a, now_a, b, deg_b, now_b, "OK" if reached else "卡住"))
     return reached
 
 
@@ -390,6 +419,55 @@ def cmd_hand(port, mids=None):
                 break
         if not ok:
             print("沒有完成，立刻關扭力。檢查卡住的那根手指有沒有碰到隔壁的手指、連桿或線。")
+    finally:
+        ok = _torque_off(c, HAND_IDS) and ok
+    print("結果：" + ("完成，扭力已關" if ok else "異常，扭力已關"))
+    return 0 if ok else 1
+
+
+def cmd_gesture(port, name, mids=None):
+    """全手比一個固定手勢：全部張開 → 依序擺出 → 停住等人 → 反序張開 → 關扭力。"""
+    g = GESTURES.get(name)
+    if g is None:
+        print("沒有「%s」這個手勢。可用的：%s" % (name, "、".join(sorted(GESTURES))))
+        return 1
+    mids = list(mids) if mids else [0.0] * 8
+    if len(mids) != 8 or any(abs(m) > MID_LIMIT_DEG for m in mids):
+        print("中位修正要給 8 個值（ID 1 到 8），每個在 ±%d° 以內；不給就全部當 0。" % MID_LIMIT_DEG)
+        return 1
+    targets = {a: (g["pose"][a][0] + mids[a - 1], g["pose"][a][1] + mids[a]) for a in g["order"]}
+    if any(abs(v) > SERVO_LIMIT_DEG for pair in targets.values() for v in pair):
+        print("手勢加上中位修正後有目標超出 ±%d°，不動作。" % SERVO_LIMIT_DEG)
+        return 1
+    c = open_bus(port)
+    found = scan(c)
+    if sorted(found) != list(HAND_IDS):
+        print("匯流排上看到 %s，預期恰好是 ID 1 到 8。" % list(found))
+        return 1
+    if not _power_ok(c, HAND_IDS):
+        return 1
+    wait_enter("要比「%s」。手的周圍淨空，一隻手放在伺服機電源的開關上。按 Enter 開始，Ctrl-C 隨時中止。" % g["label"])
+    ok = True
+
+    def open_finger(a):
+        return _step_to(c, a, a + 1, mids[a - 1] + FINGER_OPEN_DEG, mids[a] - FINGER_OPEN_DEG,
+                        FINGER_NAMES[a] + "張開")
+    try:
+        _engage(c, HAND_IDS, FINGER_SPEED)
+        print("== 全部張開")
+        ok = all(open_finger(a) for a, _ in FINGER_PAIRS)
+        if ok:
+            print("== 擺出「%s」" % g["label"])
+            ok = all(_step_to(c, a, a + 1, targets[a][0], targets[a][1], FINGER_NAMES[a]) for a in g["order"])
+        if ok:
+            pressed = wait_enter("已比出「%s」。按 Enter 收回；%d 秒內沒按也會自己收回。" % (g["label"], HOLD_MAX_S),
+                                 timeout=HOLD_MAX_S)
+            if not pressed:
+                print("（%d 秒到，自動收回）" % HOLD_MAX_S)
+            print("== 收回")
+            ok = all(open_finger(a) for a in reversed(g["order"]))
+        if not ok:
+            print("沒有完成，立刻關扭力。如果停在最後動的那根手指，多半是指尖比預期早碰到；把這段輸出貼回來調整姿態。")
     finally:
         ok = _torque_off(c, HAND_IDS) and ok
     print("結果：" + ("完成，扭力已關" if ok else "異常，扭力已關"))
@@ -453,6 +531,8 @@ def main(argv):
             return fn(argv[2], int(argv[3]), int(argv[4]), *mids)
         if cmd == "hand" and len(argv) in (3, 11):
             return cmd_hand(argv[2], [float(x) for x in argv[3:]])
+        if cmd == "gesture" and len(argv) in (4, 12):
+            return cmd_gesture(argv[2], argv[3], [float(x) for x in argv[4:]])
     except KeyboardInterrupt:
         print("\n已中止。")
         return 130
