@@ -6,7 +6,7 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 
 ## 目前狀態（2026-10-07）
 
-硬體已到貨。8 顆伺服機都通過單軸小幅轉動測試並設好 ID 1–8。四指機構已組好並完成單指校正，下一步是裝上手掌。USB 黑屏問題以中間加 USB hub 緩解，成因尚未量測（見安全邊界）。
+硬體已到貨。8 顆伺服機都通過單軸小幅轉動測試並設好 ID 1–8。四指已校正並裝上手掌，全手可通電輪流開合，剩外殼。USB 黑屏問題以中間加 USB hub 緩解，成因尚未量測（見安全邊界）。
 
 | 項目 | 狀態 |
 |---|---|
@@ -20,11 +20,12 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 | 零件前處理 | 完成：舵盤、樞軸孔、毛邊、長度治具（樞軸孔手感待組裝時驗證） |
 | 手指組裝 | 四指機構完成；合照核對奇數 ID 都在右側（偶數標籤未拍到），舵盤待校正時裝上 |
 | 校正 | 四指完成，8 個中位修正都是 0（目視判定） |
-| 手掌組裝 | 四指、手掌、手腕已合體；8 顆尚未串接，全手測試未做 |
+| 手掌組裝 | 完成：8 顆已串接，全手輪流開合測試由使用者回報正常（輸出未留存於 repo） |
+| 外殼 | 未裝 |
 
-組裝表進度 71 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
+組裝表進度 73 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
 
-**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid`、`center`、`finger` 已在實體伺服機上跑過並完成動作，但那是 bring-up 觀察，沒有 experiment ID；`diag`、`hand` 仍只在假匯流排上測過。
+**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid`、`center`、`finger`、`hand` 已在實體伺服機上跑過並完成動作，但那是 bring-up 觀察，沒有 experiment ID；`diag` 仍只在假匯流排上測過。
 
 ## 目錄
 
@@ -94,8 +95,8 @@ pytest right_hand/tests -q      # 2026-10-07：49 passed
 
 ## 接下來
 
-1. 手掌組裝、串接 8 顆、全手測試。
+1. 裝外殼。
 2. （選做）量測 USB 外殼之間的電位差，確認變壓器漏電在正常範圍。
-3. 外殼。
+3. 補上獨立的 E-stop。
 4. 建立 8-DOF semantic component IDs 與 manifest，把 bring-up 工具收斂成 hardware adapter。
 5. 用雙目相機看這隻右手：相機是 Waveshare AR0144 Stereo USB Camera (A)，資料在 [`stereo_camera/`](../stereo_camera/README.md)，決策見 [ADR-0005](../docs/adr/0005-stereo-camera-ar0144.md)。

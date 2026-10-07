@@ -140,19 +140,23 @@
 - **斷電路徑**：全手測試時，變壓器要接在有開關、伸手可及的延長線上，由操作者按著。這是人工斷電，不是獨立的 E-stop 電路；之後交給 skill 與 Safety Gateway 控制前仍要補上。
 - 測試：`pytest right_hand/tests -q` → 49 passed。`hand` 尚未在實體上執行過。
 
+- **8 顆已串接，全手測試完成（4.5、4.6）**：使用者回報 `finger_cal.sh hand`「順利、正常」。這是 `hand` 第一次在實體上執行。終端機輸出沒有看到，所以各步讀值、電壓、是否 8 顆都在線，都只有使用者的口頭結果；記為 bring-up 觀察，不是驗證結果。階段 4 完成，進度 73 / 75。
+
 ### 待辦（下一次接手從這裡開始）
-
-手掌組裝（階段 4）：
-
-- [ ] 4.5 串接 8 顆伺服機，`first_scan.sh` 要看到 ID 1–8 共 8 行。
-- [ ] 4.6 全手測試：`bash right_hand/tools/finger_cal.sh hand`，變壓器接有開關的延長線。
 
 外殼（階段 5）：
 
-- [ ] 5.1 軟掌殼、5.2 上蓋。
+- [ ] 5.1 軟掌殼：從拇指開口套入，耳片搭在 Hand plate 上面；先鎖 Hand plate 上 2 顆，再鎖 Wrist interface 上 4 顆。
+- [ ] 5.2 上蓋：線從上蓋開口拉出，確認與掌殼接縫密合，鎖 4 顆。
 
 尚未確認：
 
+- [ ] `hand` 的終端機輸出（`grep -hE "閉合 90|卡住|結果|電壓掉" right_hand/logs/finger_hand_*.log`）。
 - [ ] 俯視手背時由左到右是 ID 1、2 / 3、4 / 5、6；相鄰手指左右擺到底時橫桿螺絲不互碰。
 - [ ] 閉合時讀值少約 2° 是否為穩態誤差。
 - [ ] （選做）量測 USB 外殼之間的電位差。
+
+組裝完成後：
+
+- [ ] 把 bring-up 工具收斂成 hardware adapter，建立 8-DOF 的 semantic component IDs 與 manifest。
+- [ ] 補上獨立的 E-stop，再讓任何 skill 驅動這隻手。
