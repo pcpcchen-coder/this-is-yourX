@@ -2,7 +2,7 @@
 
 Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS0009）的組裝、bring-up 與之後的自我模型資料，都放在這個資料夾。它是 `this-is-yourX` 的第一個實體 embodiment；選型與視覺計畫見 [`docs/HISTORY.md`](../docs/HISTORY.md)。
 
-這個資料夾只管右手。之後加入的其他 X（例如雙目視覺鏡頭）各自開資料夾。
+這個資料夾只管右手。其他 X 各自開資料夾，例如雙目相機在 [`stereo_camera/`](../stereo_camera/README.md)。
 
 ## 目前狀態（2026-10-07）
 
@@ -102,4 +102,4 @@ pytest right_hand/tests -q      # 2026-10-07：69 passed
 2. （選做）量測 USB 外殼之間的電位差，確認變壓器漏電在正常範圍。
 3. 補上獨立的 E-stop。
 4. 建立 8-DOF semantic component IDs 與 manifest，把 bring-up 工具收斂成 hardware adapter。
-5. 雙目視覺鏡頭已採購（感光元件 AR0144），用來讓系統看得到這隻右手。模組型號等細節確認後另開資料夾並補 ADR，見 [`docs/HISTORY.md`](../docs/HISTORY.md)。
+5. 用雙目相機看這隻右手：相機是 Waveshare AR0144 Stereo USB Camera (A)，資料在 [`stereo_camera/`](../stereo_camera/README.md)，決策見 [ADR-0005](../docs/adr/0005-stereo-camera-ar0144.md)。

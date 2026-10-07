@@ -94,6 +94,7 @@ flowchart TD
 | [開發歷史與目前 S1 決策](docs/HISTORY.md) | Amazing Hand 採購、Webcam、影像模型、資料與驗收計畫 |
 | [技術參考](docs/REFERENCES.md) | 官方文件與版本選擇依據 |
 | [右手實機](right_hand/README.md) | Amazing Hand 右手的到貨清點、組裝指引與檢查表、bring-up 工具、建置紀錄 |
+| [雙目相機](stereo_camera/README.md) | Waveshare AR0144 Stereo USB Camera 的規格、開箱確認項目與安裝條件；決策見 [ADR-0005](docs/adr/0005-stereo-camera-ar0144.md) |
 
 另有可直接機器驗證的範例：
 
@@ -123,6 +124,7 @@ this-is-yourX/
 ├── diagnostics/          # discrepancy/fault detector（後續）
 ├── simulation/           # Gazebo worlds、launch、tests（後續）
 ├── right_hand/           # Amazing Hand 右手實機：組裝、bring-up、建置紀錄
+├── stereo_camera/        # AR0144 雙目 USB 相機：規格、校正與驗證紀錄
 └── tests/                # schema、unit、integration、HIL（後續）
 ```
 
