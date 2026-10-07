@@ -320,3 +320,31 @@ def test_finger_does_nothing_if_cancelled_before_start(monkeypatch):
     with FakeBus([a, b]) as bus:
         assert run("finger", bus.port, 1, 2) == 130
         assert bus.writes == []
+
+
+def test_move_pair_reports_the_settled_position_not_the_first_reading_in_tolerance():
+    # 2026-10-07 實機：第一次進到容許範圍就回報，印出的是途中的讀值（目標 -30° 印 -23.4°）。
+    readings = {1: iter([-22.0, -26.0, -29.0, -29.8, -29.9, -29.9]),
+                2: iter([22.0, 26.0, 29.0, 29.8, 29.9, 29.9])}
+
+    class Ctl:
+        def write_goal_position(self, sid, rad):
+            pass
+
+        def read_present_position(self, sid):
+            return [servo_tool.math.radians(next(readings[sid]))]
+
+    ok, a, b = servo_tool._move_pair(Ctl(), 1, 2, -30, 30, servo_tool.FINGER_TOLERANCE_DEG)
+    assert ok and abs(a + 29.9) < 0.05 and abs(b - 29.9) < 0.05
+
+
+def test_move_pair_fails_when_a_servo_settles_outside_tolerance():
+    class Ctl:
+        def write_goal_position(self, sid, rad):
+            pass
+
+        def read_present_position(self, sid):
+            return [servo_tool.math.radians(40.0 if sid == 1 else -90.0)]
+
+    ok, a, b = servo_tool._move_pair(Ctl(), 1, 2, 90, -90, servo_tool.FINGER_TOLERANCE_DEG)
+    assert not ok and abs(a - 40.0) < 0.05

@@ -44,6 +44,7 @@ CENTER_SPEED = 3
 FINGER_SPEED = 1.5           # 帶著手指動，比無負載測試慢一半
 FINGER_TOLERANCE_DEG = 8.0
 FINGER_SETTLE_S = 3.0
+STILL_DEG = 0.5              # 連續兩次讀值差小於這個值，視為已停下
 FINGER_OPEN_DEG = -30        # 奇數 ID 的角度；偶數 ID 取負號
 FINGER_CLOSE_STEPS_DEG = (0, 30, 60, 90)
 
@@ -250,14 +251,20 @@ def _move_pair(c, a, b, deg_a, deg_b, tolerance):
     """兩顆一起走到目標，輪詢到位。回傳 (是否都到位, a 的實際角度, b 的實際角度)。"""
     c.write_goal_position(a, math.radians(deg_a))
     c.write_goal_position(b, math.radians(deg_b))
-    now_a = now_b = None
+    now_a = now_b = last_a = last_b = None
     for _ in range(int(FINGER_SETTLE_S / 0.1)):
         time.sleep(0.1)
         now_a = math.degrees(one(c.read_present_position(a)))
         now_b = math.degrees(one(c.read_present_position(b)))
-        if abs(now_a - deg_a) < tolerance and abs(now_b - deg_b) < tolerance:
+        near = abs(now_a - deg_a) < tolerance and abs(now_b - deg_b) < tolerance
+        # 進到容許範圍後還要等它停下來，回報的才是靜止位置，不是途中的讀值。
+        still = (last_a is not None
+                 and abs(now_a - last_a) < STILL_DEG and abs(now_b - last_b) < STILL_DEG)
+        if near and still:
             return True, now_a, now_b
-    return False, now_a, now_b
+        last_a, last_b = now_a, now_b
+    near = abs(now_a - deg_a) < tolerance and abs(now_b - deg_b) < tolerance
+    return near, now_a, now_b
 
 
 def _torque_off(c, ids):
