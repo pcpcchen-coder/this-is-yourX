@@ -15,7 +15,8 @@ sys.path.insert(0, os.path.join(HERE, "..", "tools"))
 pytest.importorskip("rustypot")
 
 import servo_tool  # noqa: E402
-from fake_scs_bus import ADDR_ID, ADDR_LOCK, ADDR_TORQUE, FakeBus, FakeServo  # noqa: E402
+from fake_scs_bus import (ADDR_GOAL, ADDR_ID, ADDR_LOCK, ADDR_TORQUE, ADDR_VOLT,  # noqa: E402
+                          FakeBus, FakeServo)
 
 
 @pytest.fixture(autouse=True)
@@ -192,7 +193,8 @@ def test_center_holds_torque_until_enter_then_releases_both(pair, capsys):
         assert run("center", bus.port, 1, 2) == 0
     assert enter.seen == [[1, 1]]                 # 等人裝舵盤時兩顆都有扭力
     assert a.torque_history == [1, 0] and b.torque_history == [1, 0]
-    assert a.goal_history == [MID_RAW] and b.goal_history == [MID_RAW]
+    # 第一筆是開扭力前「停在原地」的目標，第二筆才是中位
+    assert a.goal_history == [MID_RAW, MID_RAW] and b.goal_history == [MID_RAW, MID_RAW]
     assert "扭力已關" in capsys.readouterr().out
 
 
@@ -200,7 +202,7 @@ def test_center_applies_middle_offsets_with_their_signs(pair):
     a, b, _ = pair
     with FakeBus([a, b]) as bus:
         assert run("center", bus.port, 1, 2, 10, -10) == 0
-    assert a.goal_history[0] > MID_RAW > b.goal_history[0]
+    assert a.goal_history[-1] > MID_RAW > b.goal_history[-1]
 
 
 @pytest.mark.parametrize("ids", [(2, 3), (1, 3), (2, 1), (9, 10)])
@@ -264,11 +266,11 @@ def test_finger_runs_one_mirrored_open_close_cycle_and_releases_torque(pair, cap
     # 開始前還沒開扭力；閉合停住時兩顆都有扭力
     assert enter.seen == [[0, 0], [1, 1]]
     assert a.torque_history == [1, 0] and b.torque_history == [1, 0]
-    # 張開、中位、三段閉合、張開、中位，共 7 個目標；兩顆以中位為軸鏡像
-    assert len(a.goal_history) == 7
+    # 停在原地、張開、中位、三段閉合、張開、中位，共 8 個目標；兩顆以中位為軸鏡像
+    assert len(a.goal_history) == 8
     for ga, gb in zip(a.goal_history, b.goal_history):       # 換算成原始值時各自四捨五入，差 1 以內
         assert abs((ga - MID_RAW) + (gb - MID_RAW)) <= 1
-    assert max(a.goal_history) == a.goal_history[4] and a.goal_history[-1] == MID_RAW
+    assert max(a.goal_history) == a.goal_history[5] and a.goal_history[-1] == MID_RAW
     out = capsys.readouterr().out
     assert "閉合 90°" in out and "完成，扭力已關" in out
 
@@ -281,7 +283,7 @@ def test_finger_stops_and_releases_torque_when_the_mechanism_binds(monkeypatch, 
     with FakeBus([a, b]) as bus:
         assert run("finger", bus.port, 1, 2) == 1
     assert len(enter.seen) == 1                   # 沒有走到「閉合停住」那一步
-    assert len(a.goal_history) == 4               # 張開、中位、30°、60° 就停
+    assert len(a.goal_history) == 5               # 停在原地、張開、中位、30°、60° 就停
     assert a.torque_history[-1] == 0 and b.torque_history[-1] == 0
     assert "卡住" in capsys.readouterr().out
 
@@ -348,3 +350,110 @@ def test_move_pair_fails_when_a_servo_settles_outside_tolerance():
 
     ok, a, b = servo_tool._move_pair(Ctl(), 1, 2, 90, -90, servo_tool.FINGER_TOLERANCE_DEG)
     assert not ok and abs(a - 40.0) < 0.05
+
+
+def test_torque_is_enabled_only_after_speed_and_a_hold_position_goal_are_set(pair):
+    # 開扭力時伺服機會朝目標暫存器裡的舊值走；先把目標設成目前位置才不會衝。
+    a, b, _ = pair
+    a.mem[56], a.mem[57] = 0x02, 0x58             # ID 1 目前在 600，不在中位
+    with FakeBus([a, b]) as bus:
+        assert run("center", bus.port, 1, 2) == 0
+        for sid, servo in ((1, a), (2, b)):
+            addrs = [addr for s_, addr, _ in bus.writes if s_ == sid]
+            on = addrs.index(ADDR_TORQUE)
+            assert 46 in addrs[:on] and ADDR_GOAL in addrs[:on]
+    assert a.goal_history[0] == 600               # 第一個目標就是原地
+
+
+# --- hand：8 顆全接 -------------------------------------------------------
+
+def make_hand(monkeypatch, servos=None, raise_on=None):
+    servos = servos or [FakeServo(i) for i in range(1, 9)]
+    enter = Enter(servos, raise_on=raise_on)
+    monkeypatch.setattr(servo_tool, "wait_enter", enter)
+    return servos, enter
+
+
+def goal_order_after_engage(bus):
+    last_on = max(i for i, (_, addr, data) in enumerate(bus.writes) if addr == ADDR_TORQUE and data == [1])
+    return [sid for sid, addr, _ in bus.writes[last_on + 1:] if addr == ADDR_GOAL]
+
+
+def test_hand_opens_all_then_cycles_one_finger_at_a_time(monkeypatch, capsys):
+    servos, enter = make_hand(monkeypatch)
+    with FakeBus(servos) as bus:
+        assert run("hand", bus.port) == 0
+        order = goal_order_after_engage(bus)
+    assert enter.seen == [[0] * 8]                # 按 Enter 前沒有任何一顆有扭力
+    assert order == list(range(1, 9)) + [1, 2] * 5 + [3, 4] * 5 + [5, 6] * 5 + [7, 8] * 5
+    assert all(sv.torque_history == [1, 0] for sv in servos)
+    out = capsys.readouterr().out
+    assert "拇指" in out and "完成，扭力已關" in out
+
+
+@pytest.mark.parametrize("ids", [[1, 2, 3, 4, 5, 6, 7], [1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 2]])
+def test_hand_refuses_unless_exactly_ids_1_to_8_answer(ids, monkeypatch, capsys):
+    servos, enter = make_hand(monkeypatch, [FakeServo(i) for i in ids])
+    with FakeBus(servos) as bus:
+        assert run("hand", bus.port) == 1
+        assert bus.writes == []
+    assert enter.seen == [] and "ID 1 到 8" in capsys.readouterr().out
+
+
+def test_hand_refuses_when_any_servo_has_bad_voltage(monkeypatch):
+    servos, enter = make_hand(monkeypatch, [FakeServo(i, volt_dv=36 if i == 6 else 50) for i in range(1, 9)])
+    with FakeBus(servos) as bus:
+        assert run("hand", bus.port) == 1
+        assert bus.writes == []
+    assert enter.seen == []
+
+
+def test_hand_rejects_a_wrong_number_of_middle_offsets(monkeypatch):
+    servos, _ = make_hand(monkeypatch)
+    with FakeBus(servos) as bus:
+        assert servo_tool.cmd_hand(bus.port, [0, 0, 0]) == 1
+        assert servo_tool.cmd_hand(bus.port, [0] * 7 + [45]) == 1
+        assert bus.writes == []
+
+
+def test_hand_stops_at_the_finger_that_binds_and_releases_all_torque(monkeypatch, capsys):
+    servos = [FakeServo(i, travel=(300, 650) if i == 3 else None) for i in range(1, 9)]
+    make_hand(monkeypatch, servos)
+    with FakeBus(servos) as bus:
+        assert run("hand", bus.port) == 1
+    assert all(sv.torque_history[-1] == 0 for sv in servos)
+    assert len(servos[4].goal_history) == 2       # 無名指只有「停在原地」和「張開」，沒有輪到它閉合
+    out = capsys.readouterr().out
+    assert "卡住" in out and "無名指（" not in out
+
+
+def test_hand_stops_when_supply_voltage_sags_after_a_finger_cycle(monkeypatch, capsys):
+    class Sagging(FakeServo):
+        def write(self, addr, data):
+            super().write(addr, data)
+            if len(self.goal_history) >= 7:       # 食指走完一輪後電壓掉下去
+                self.mem[ADDR_VOLT] = 38
+
+    servos = [Sagging(1)] + [FakeServo(i) for i in range(2, 9)]
+    make_hand(monkeypatch, servos)
+    with FakeBus(servos) as bus:
+        assert run("hand", bus.port) == 1
+    assert all(sv.torque_history[-1] == 0 for sv in servos)
+    assert len(servos[2].goal_history) == 2       # 中指沒有開始閉合
+    assert "電壓掉到" in capsys.readouterr().out
+
+
+def test_hand_does_nothing_if_cancelled_before_start(monkeypatch):
+    servos, _ = make_hand(monkeypatch, raise_on=1)
+    with FakeBus(servos) as bus:
+        assert run("hand", bus.port) == 130
+        assert bus.writes == []
+
+
+def test_hand_applies_per_servo_middle_offsets(monkeypatch):
+    servos, _ = make_hand(monkeypatch)
+    with FakeBus(servos) as bus:
+        assert run("hand", bus.port, 5, -5, 0, 0, 0, 0, 0, 0) == 0
+    # 最後一個目標是張開：ID 1 是 mid-30、ID 2 是 mid+30；修正值各自往自己的方向平移
+    assert servos[0].goal_history[-1] > servos[2].goal_history[-1]
+    assert servos[1].goal_history[-1] < servos[3].goal_history[-1]

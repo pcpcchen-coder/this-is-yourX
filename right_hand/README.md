@@ -20,11 +20,11 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 | 零件前處理 | 完成：舵盤、樞軸孔、毛邊、長度治具（樞軸孔手感待組裝時驗證） |
 | 手指組裝 | 四指機構完成；合照核對奇數 ID 都在右側（偶數標籤未拍到），舵盤待校正時裝上 |
 | 校正 | 四指完成，8 個中位修正都是 0（目視判定） |
-| 手掌組裝 | 食指、中指、無名指已裝上 Hand plate；拇指與手腕未裝 |
+| 手掌組裝 | 四指、手掌、手腕已合體；8 顆尚未串接，全手測試未做 |
 
-組裝表進度 69 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
+組裝表進度 71 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
 
-**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid`、`center`、`finger` 已在實體伺服機上跑過並完成動作，但那是 bring-up 觀察，沒有 experiment ID；`diag` 仍只在假匯流排上測過。
+**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid`、`center`、`finger` 已在實體伺服機上跑過並完成動作，但那是 bring-up 觀察，沒有 experiment ID；`diag`、`hand` 仍只在假匯流排上測過。
 
 ## 目錄
 
@@ -46,7 +46,7 @@ right_hand/
 │   ├── servo_tool.py               # 人工操作的 bring-up 工具（單顆測試、設 ID、單指校正）
 │   ├── first_scan.sh               # 第一次上電：建環境、找埠、掃描（只讀）
 │   ├── assign_id.sh                # 單顆：掃描 → 轉動測試 → 改 ID → 再掃描
-│   └── finger_cal.sh               # 單指校正：回中位裝舵盤、分段開合微調中位
+│   └── finger_cal.sh               # 單指校正（center、finger）與全手測試（hand）
 └── tests/
     ├── fake_scs_bus.py             # 假的 SCS 匯流排
     └── test_servo_tool.py
@@ -70,6 +70,7 @@ python tools/servo_tool.py test  <PORT> <ID>  # 單顆、無負載、±20° 低�
 python tools/servo_tool.py setid <PORT> 1 3   # 匯流排上只接一顆時改 ID
 python tools/servo_tool.py center <PORT> 1 2  # 一根手指的兩顆回中位並保持扭力（裝舵盤用）
 python tools/servo_tool.py finger <PORT> 1 2 [中位A 中位B]   # 分段開合一次（微調中位用）
+python tools/servo_tool.py hand <PORT> [中位1 … 中位8]      # 8 顆全接，四根手指輪流開合一次
 ```
 
 組裝檢查表：用瀏覽器開 `docs/assembly_checklist/index.html`。離線開啟時，勾選進度只存在該瀏覽器。
@@ -78,7 +79,7 @@ python tools/servo_tool.py finger <PORT> 1 2 [中位A 中位B]   # 分段開合�
 
 ```bash
 pip install pytest
-pytest right_hand/tests -q      # 2026-10-07：38 passed
+pytest right_hand/tests -q      # 2026-10-07：49 passed
 ```
 
 ## 安全邊界
@@ -86,7 +87,8 @@ pytest right_hand/tests -q      # 2026-10-07：38 passed
 - `servo_tool.py` 是給人在工作台上用的 bring-up 工具，不在 AI 控制路徑上。生成式模型不直接下馬達命令；之後的動作一律經 versioned skill 與 Safety Gateway（見根目錄 `AGENTS.md`）。
 - `test` 動作前會檢查：匯流排上只有一顆、電壓在 4.0–7.4V、溫度不超過 60°C；任何一項不符就不開扭力。離開前一定關扭力，包含例外與 Ctrl-C。
 - `center`、`finger` 只接受同一根手指的一對 ID（1 2、3 4、5 6、7 8），匯流排上必須恰好是這兩顆，電壓、溫度條件同上；中位修正限 ±30°。`finger` 以較低速度分段開合，任一步 3 秒內沒到位（誤差 8° 以上）就停止並關扭力。
-- 變壓器是實體斷電路徑。目前沒有獨立的 E-stop；多軸動作前要補上。
+- `hand` 要求匯流排上恰好是 ID 1–8，一次只動一根手指；任一步沒到位或電壓低於 4.0V 就停止並關全部扭力。
+- 斷電路徑是變壓器。全手測試時變壓器接在有開關、伸手可及的延長線上，由操作者按著。這是人工斷電，不是獨立的 E-stop 電路；交給 skill 與 Safety Gateway 控制之前要補上。
 - 插拔伺服機或線材前先斷電。
 - **USB 黑屏已用 hub 緩解，成因未量測**：變壓器供電時，USB 線頭金屬殼一碰到驅動板 USB 外殼，Mac mini 螢幕就會黑一下（2026-10-04），兩種接線順序都發生過。2026-10-07 使用者改成驅動板經 USB hub 接 Mac mini，螢幕不再受影響。兩個外殼之間的電位差沒有量過，所以變壓器的漏電大小與絕緣狀況仍未知；驅動板一律經 hub 連接，不要直插 Mac mini。
 

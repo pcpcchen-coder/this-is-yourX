@@ -15,10 +15,13 @@
                                              一根手指的兩顆回中位並保持扭力，用來裝舵盤
   python servo_tool.py finger PORT A B [MID_A MID_B]
                                              一根手指分段開合一次，用來微調中位
+  python servo_tool.py hand   PORT [MID_1 … MID_8]
+                                             全手：8 顆都接上，四根手指輪流開合一次
 
 `test` 只用在還沒裝進手指、出力軸沒有負載的伺服機上。
 `center`、`finger` 一次只接一根手指的兩顆：A 是奇數 ID、B 是 A+1。MID 是中位修正，
-單位是度，預設 0。
+單位是度，預設 0。`hand` 要 ID 1–8 全部在線；一次只動一根手指，其餘保持張開。
+執行 `hand` 時，人要能隨手切斷伺服機電源（例如變壓器接在有開關的延長線上）。
 """
 import glob
 import math
@@ -47,6 +50,8 @@ FINGER_SETTLE_S = 3.0
 STILL_DEG = 0.5              # 連續兩次讀值差小於這個值，視為已停下
 FINGER_OPEN_DEG = -30        # 奇數 ID 的角度；偶數 ID 取負號
 FINGER_CLOSE_STEPS_DEG = (0, 30, 60, 90)
+HAND_IDS = tuple(range(1, 9))
+FINGER_NAMES = {1: "食指", 3: "中指", 5: "無名指", 7: "拇指"}
 
 
 def open_bus(port):
@@ -234,17 +239,29 @@ def _open_pair(port, a, b):
     if sorted(found) != [a, b]:
         print("匯流排上看到 %s，預期恰好是 [%d, %d]。一次只接一根手指的兩顆。" % (list(found), a, b))
         return None
-    for sid in (a, b):
+    return c if _power_ok(c, (a, b)) else None
+
+
+def _power_ok(c, ids):
+    for sid in ids:
         volt = one(c.read_present_voltage(sid)) / 10.0
         temp = one(c.read_present_temperature(sid))
         print("ID %d  電壓 %.1f V  溫度 %d °C" % (sid, volt, temp))
         if not (VOLT_MIN <= volt <= VOLT_MAX):
             print("電壓不在 %.1f–%.1f V 範圍內，不動作。先檢查電源。" % (VOLT_MIN, VOLT_MAX))
-            return None
+            return False
         if temp > TEMP_MAX_C:
             print("溫度超過 %d °C，不動作。" % TEMP_MAX_C)
-            return None
-    return c
+            return False
+    return True
+
+
+def _engage(c, ids, speed):
+    """開扭力前先設速度，並把目標設成目前位置，開扭力的瞬間才不會朝舊目標衝過去。"""
+    for sid in ids:
+        c.write_goal_speed(sid, speed)
+        c.write_goal_position(sid, one(c.read_present_position(sid)))
+        c.write_torque_enable(sid, 1)
 
 
 def _move_pair(c, a, b, deg_a, deg_b, tolerance):
@@ -288,10 +305,7 @@ def cmd_center(port, a, b, mid_a=0.0, mid_b=0.0):
     print("開扭力，ID %d → %+.1f°，ID %d → %+.1f° …" % (a, mid_a, b, mid_b))
     ok = False
     try:
-        c.write_torque_enable(a, 1)
-        c.write_torque_enable(b, 1)
-        c.write_goal_speed(a, CENTER_SPEED)
-        c.write_goal_speed(b, CENTER_SPEED)
+        _engage(c, (a, b), CENTER_SPEED)
         ok, now_a, now_b = _move_pair(c, a, b, mid_a, mid_b, WIGGLE_TOLERANCE_DEG)
         print("  ID %d 實際 %+6.1f°   ID %d 實際 %+6.1f°   %s" % (a, now_a, b, now_b, "OK" if ok else "沒到位"))
         if ok:
@@ -312,18 +326,12 @@ def cmd_finger(port, a, b, mid_a=0.0, mid_b=0.0):
     wait_enter("手指周圍淨空、手不要放在指節之間。按 Enter 開始，Ctrl-C 隨時中止。")
     ok = True
     try:
-        c.write_torque_enable(a, 1)
-        c.write_torque_enable(b, 1)
-        c.write_goal_speed(a, FINGER_SPEED)
-        c.write_goal_speed(b, FINGER_SPEED)
+        _engage(c, (a, b), FINGER_SPEED)
         plan = [("張開", FINGER_OPEN_DEG)]
         plan += [("閉合 %d°" % d if d else "中位", d) for d in FINGER_CLOSE_STEPS_DEG]
         plan += [("張開", FINGER_OPEN_DEG), ("中位", 0)]
         for label, d in plan:
-            reached, now_a, now_b = _move_pair(c, a, b, mid_a + d, mid_b - d, FINGER_TOLERANCE_DEG)
-            print("  %-8s ID %d 目標 %+6.1f° 實際 %+6.1f°   ID %d 目標 %+6.1f° 實際 %+6.1f°   %s" % (
-                label, a, mid_a + d, now_a, b, mid_b - d, now_b, "OK" if reached else "卡住"))
-            if not reached:
+            if not _step(c, a, b, mid_a, mid_b, label, d):
                 print("沒有到位，立刻關扭力。檢查連桿、舵盤有沒有互卡，或手指有沒有頂到東西。")
                 ok = False
                 break
@@ -331,6 +339,59 @@ def cmd_finger(port, a, b, mid_a=0.0, mid_b=0.0):
                 wait_enter("手指已閉合。看兩個舵盤的耳朵有沒有對齊伺服機中線，看完按 Enter 張開。")
     finally:
         ok = _torque_off(c, (a, b)) and ok
+    print("結果：" + ("完成，扭力已關" if ok else "異常，扭力已關"))
+    return 0 if ok else 1
+
+
+def _step(c, a, b, mid_a, mid_b, label, d):
+    """一根手指走到一個姿態並印出結果。回傳是否到位。"""
+    reached, now_a, now_b = _move_pair(c, a, b, mid_a + d, mid_b - d, FINGER_TOLERANCE_DEG)
+    print("  %-8s ID %d 目標 %+6.1f° 實際 %+6.1f°   ID %d 目標 %+6.1f° 實際 %+6.1f°   %s" % (
+        label, a, mid_a + d, now_a, b, mid_b - d, now_b, "OK" if reached else "卡住"))
+    return reached
+
+
+def cmd_hand(port, mids=None):
+    """全手：8 顆都在線，先全部張開，再讓四根手指輪流分段閉合、張開。一次只動一根。"""
+    mids = list(mids) if mids else [0.0] * 8
+    if len(mids) != 8 or any(abs(m) > MID_LIMIT_DEG for m in mids):
+        print("中位修正要給 8 個值（ID 1 到 8），每個在 ±%d° 以內；不給就全部當 0。" % MID_LIMIT_DEG)
+        return 1
+    c = open_bus(port)
+    found = scan(c)
+    if sorted(found) != list(HAND_IDS):
+        print("匯流排上看到 %s，預期恰好是 ID 1 到 8。" % list(found))
+        return 1
+    if not _power_ok(c, HAND_IDS):
+        return 1
+    wait_enter("手的周圍淨空，一隻手放在伺服機電源的開關上。按 Enter 開始，Ctrl-C 隨時中止。")
+    ok = True
+    try:
+        _engage(c, HAND_IDS, FINGER_SPEED)
+        print("== 全部張開")
+        for a, b in FINGER_PAIRS:
+            if not _step(c, a, b, mids[a - 1], mids[b - 1], FINGER_NAMES[a], FINGER_OPEN_DEG):
+                ok = False
+                break
+        for a, b in FINGER_PAIRS if ok else ():
+            print("== %s（ID %d、%d）" % (FINGER_NAMES[a], a, b))
+            plan = [("閉合 %d°" % d if d else "中位", d) for d in FINGER_CLOSE_STEPS_DEG]
+            plan += [("張開", FINGER_OPEN_DEG)]
+            for label, d in plan:
+                if not _step(c, a, b, mids[a - 1], mids[b - 1], label, d):
+                    ok = False
+                    break
+            if not ok:
+                break
+            volts = [one(c.read_present_voltage(sid)) / 10.0 for sid in (a, b)]
+            if min(volts) < VOLT_MIN:
+                print("動作後電壓掉到 %.1f V，低於 %.1f V，停止。檢查電源與線材。" % (min(volts), VOLT_MIN))
+                ok = False
+                break
+        if not ok:
+            print("沒有完成，立刻關扭力。檢查卡住的那根手指有沒有碰到隔壁的手指、連桿或線。")
+    finally:
+        ok = _torque_off(c, HAND_IDS) and ok
     print("結果：" + ("完成，扭力已關" if ok else "異常，扭力已關"))
     return 0 if ok else 1
 
@@ -390,6 +451,8 @@ def main(argv):
             mids = [float(x) for x in argv[5:7]] if len(argv) == 7 else [0.0, 0.0]
             fn = cmd_center if cmd == "center" else cmd_finger
             return fn(argv[2], int(argv[3]), int(argv[4]), *mids)
+        if cmd == "hand" and len(argv) in (3, 11):
+            return cmd_hand(argv[2], [float(x) for x in argv[3:]])
     except KeyboardInterrupt:
         print("\n已中止。")
         return 130
