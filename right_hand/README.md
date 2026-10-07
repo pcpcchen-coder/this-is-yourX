@@ -39,6 +39,7 @@ right_hand/
 │   ├── assembly_guide.md           # 組裝順序、Seeed 套件差異、注意事項、來源
 │   ├── arrival_inspection.md       # 到貨清點結果
 │   ├── gesture_calibration.md      # 固定手勢的定案角度與指尖間距對照（OK）
+│   ├── hand_api_design.md          # 給 AI 用的介面設計草案（ADR-0006，尚未實作）
 │   └── assembly_checklist/
 │       ├── index.html              # 75 項可勾選檢查表，瀏覽器直接開
 │       ├── progress.json           # 進度快照

@@ -204,6 +204,17 @@
   - `fast` 下拇指 ID 7 被要求的速度約 240°/s，伺服機速度上限設在約 258°/s，已經很接近，表裡不再加更快的選項。
   - `normal` 有沒有跑過，這張畫面看不出來。
 
+## 2026-10-08 — AI 介面：現有工具調查與設計
+
+- 使用者要求：找 GitHub 上有沒有這隻手的 API 工具；沒有的話設計一套，讓 AI 之後可以在對話中控制這隻手。
+- 調查結果（網頁搜尋加逐一開專案頁；這個工作階段不能用 GitHub 搜尋 API，可能有漏）：
+  - 官方 `pollen-robotics/AmazingHand`：示範腳本與 Demo，不是 API。
+  - `Betatester777/AmazingHandControl`：GUI 加 CLI，有具名 pose 與 sequence，最接近可重用的控制層，但沒有 agent 介面或授權。
+  - `CRAZY0921/AmazingHand_ROS2`、`Juxi-Rui/Lerobot-AmazingHand`：ROS 2 套件與 LeRobot fork，都很早期，目標不同。
+  - 沒有找到給 Amazing Hand 用的 MCP server 或其他 agent 介面。
+- 設計寫成 [ADR-0006](../docs/adr/0006-hand-skill-api-mcp.md)（proposed）與 [`docs/hand_api_design.md`](docs/hand_api_design.md)：hardware adapter（真／假）、skill gateway 常駐程式 `handd`、MCP 介面卡、操作者 CLI；AI 只能從已校正的手勢表選名字、速度檔、停留秒數；授權是實體開關加上本機開啟的有期限 session。
+- 這一天只有文件，沒有新增程式，也沒有實機動作。`pytest right_hand/tests -q` → 69 passed（未變）。
+
 ### 待辦（下一次接手從這裡開始）
 
 收尾：
@@ -220,7 +231,8 @@
 - [x] `gesture ok fast`：實機跑過一次，12 輪 0.5 秒，正常結束。
 - [ ] `gesture ok normal`：還沒看到實機紀錄。
 - [ ] 補上獨立的 E-stop，再讓任何 skill 驅動這隻手。
-- [ ] 把手勢從 bring-up 工具搬到 versioned skill（參數 schema、前置條件、限制、timeout、取消、稽核事件、模擬與拒絕測試）。
+- [ ] ADR-0006 等使用者決定三件事：授權方式（session 或逐次核准）、是否加固定的實體開關／E-stop、第一批要校正的手勢。
+- [ ] 把手勢從 bring-up 工具搬到 versioned skill（參數 schema、前置條件、限制、timeout、取消、稽核事件、模擬與拒絕測試）。設計見 `docs/hand_api_design.md`，分期 P1–P4。
 - [ ] 把 bring-up 工具收斂成 hardware adapter（含 fake adapter、timestamp／freshness、斷線與 safe-state 測試），建立 8-DOF 的 semantic component IDs 與 manifest。
 - [ ] 雙目相機：跑 probe 腳本確認解析度、FPS、左右眼，再進 ADR-0005 的驗證項目。
 - [ ] （選做）量測 USB 外殼之間的電位差。
