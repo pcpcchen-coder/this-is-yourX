@@ -93,6 +93,7 @@ flowchart TD
 | [S1 實機建置計畫](docs/11_S1_BUILD_PLAN.md) | 原 2-DOF 本地視覺方案；目前保留為 fallback |
 | [開發歷史與目前 S1 決策](docs/HISTORY.md) | Amazing Hand 採購、Webcam、影像模型、資料與驗收計畫 |
 | [技術參考](docs/REFERENCES.md) | 官方文件與版本選擇依據 |
+| [右手實機](right_hand/README.md) | Amazing Hand 右手的到貨清點、組裝指引與檢查表、bring-up 工具、建置紀錄 |
 
 另有可直接機器驗證的範例：
 
@@ -121,6 +122,7 @@ this-is-yourX/
 ├── skill_gateway/        # 安全 skill 執行（後續）
 ├── diagnostics/          # discrepancy/fault detector（後續）
 ├── simulation/           # Gazebo worlds、launch、tests（後續）
+├── right_hand/           # Amazing Hand 右手實機：組裝、bring-up、建置紀錄
 └── tests/                # schema、unit、integration、HIL（後續）
 ```
 

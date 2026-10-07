@@ -1,0 +1,3 @@
+rustypot>=1.10
+numpy
+pyserial

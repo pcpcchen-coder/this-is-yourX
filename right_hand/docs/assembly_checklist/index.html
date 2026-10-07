@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Amazing Hand 組裝表</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+/* Layout: one narrow bench-sheet column; sticky progress strip on top, phases as flat sections, steps as ruled rows. */
+:root{
+  --bg:#eef1f4; --surface:#ffffff; --ink:#16202b; --muted:#5b6876; --line:#d3dae2;
+  --accent:#1c5fb0; --accent-soft:#e1ecf9;
+  --warn:#8a5200; --warn-soft:#fdf1d8;
+  --ok:#1e7a4f; --ok-soft:#dff3e8;
+  --sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#10161d; --surface:#18212b; --ink:#e6edf4; --muted:#93a1b0; --line:#2b3745;
+    --accent:#6aa9f0; --accent-soft:#1b2e45;
+    --warn:#f0b655; --warn-soft:#3a2c12;
+    --ok:#5fcf98; --ok-soft:#153426;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#10161d; --surface:#18212b; --ink:#e6edf4; --muted:#93a1b0; --line:#2b3745;
+  --accent:#6aa9f0; --accent-soft:#1b2e45;
+  --warn:#f0b655; --warn-soft:#3a2c12;
+  --ok:#5fcf98; --ok-soft:#153426;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.65;margin:0}
+.wrap{max-width:820px;margin:0 auto;padding-inline:16px;padding-block:20px 56px;display:flex;flex-direction:column;gap:28px}
+h1{font-size:26px;line-height:1.25;margin:0;font-weight:700;text-wrap:balance}
+.sub{color:var(--muted);margin:6px 0 0;max-width:62ch}
+code{font-family:var(--mono);font-size:.88em;background:var(--accent-soft);padding:1px 5px;border-radius:3px;overflow-wrap:anywhere}
+
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px 14px;display:flex;flex-direction:column;gap:8px}
+.bar-top{display:flex;gap:12px;align-items:baseline;justify-content:space-between;flex-wrap:wrap}
+.count{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600}
+.next{min-width:0;font-size:14px}
+.next b{color:var(--accent)}
+.track{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.fill{height:100%;width:0;background:var(--ok);transition:width .25s}
+@media (prefers-reduced-motion:reduce){.fill{transition:none}}
+.sync{font-size:12px;color:var(--muted)}
+
+section{display:flex;flex-direction:column;gap:0}
+.ph-head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;border-bottom:2px solid var(--ink);padding-bottom:6px}
+.ph-no{font-family:var(--mono);font-weight:600;color:var(--accent)}
+h2{font-size:18px;margin:0;font-weight:700}
+.ph-count{margin-left:auto;font-family:var(--mono);font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ph-note{color:var(--muted);font-size:14px;margin:8px 0 0;max-width:66ch}
+
+.step{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.step.pf{grid-template-columns:minmax(0,1fr) auto}
+.step.is-next{background:var(--accent-soft);margin-inline:-10px;padding-inline:10px;border-radius:4px}
+.step input[type=checkbox]{width:20px;height:20px;margin:3px 0 0;accent-color:var(--ok);cursor:pointer}
+.step input[type=checkbox]:focus-visible,.pgbtn:focus-visible,.copy:focus-visible,.mid input:focus-visible,.side input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.body{min-width:0}
+.ttl{font-weight:500;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.no{font-family:var(--mono);font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.tag{font-size:12px;font-weight:700;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:0 6px;line-height:1.5}
+.desc{margin:2px 0 0;color:var(--ink);font-size:14px;max-width:64ch}
+.warn{margin:6px 0 0;font-size:13.5px;color:var(--warn);background:var(--warn-soft);padding:5px 9px;border-radius:3px;max-width:64ch}
+.warn b{font-weight:700;margin-right:4px}
+.done .ttl>span:not(.no):not(.tag){text-decoration:line-through;color:var(--muted)}
+.pgbtn{font:inherit;font-size:13px;margin-top:6px;background:none;border:1px solid var(--line);color:var(--accent);border-radius:3px;padding:2px 9px;cursor:pointer}
+.pgbtn:hover{border-color:var(--accent)}
+figure{margin:8px 0 0;grid-column:1/-1}
+figure img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:4px;background:#eee}
+figure img+img{margin-top:6px}
+figcaption{font-size:12px;color:var(--muted);margin-top:4px}
+
+.fg{display:grid;grid-template-columns:repeat(4,46px);gap:2px;align-self:start}
+.fg label{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--muted);cursor:pointer}
+.fg label.cur{color:var(--accent);font-weight:700}
+@media (max-width:560px){
+  .step.pf{grid-template-columns:minmax(0,1fr)}
+  .fg{grid-template-columns:repeat(4,1fr);max-width:260px;margin-top:6px}
+}
+
+.calib{margin-top:14px;display:flex;flex-direction:column;gap:10px}
+.calib h3{font-size:15px;margin:0;font-weight:700}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-weight:500;color:var(--muted);font-size:13px}
+td.id{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.mid input{font-family:var(--mono);font-size:14px;width:72px;padding:4px 6px;border:1px solid var(--line);border-radius:3px;background:var(--surface);color:var(--ink)}
+.out{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.out pre{margin:0;font-family:var(--mono);font-size:13px;background:var(--surface);border:1px solid var(--line);border-radius:3px;padding:7px 10px;overflow-x:auto;min-width:0;flex:1 1 260px}
+.copy{font:inherit;font-size:13px;background:var(--accent);color:var(--surface);border:0;border-radius:3px;padding:6px 12px;cursor:pointer}
+.side{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:14px}
+.side label{display:flex;gap:5px;align-items:center;cursor:pointer}
+footer{color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);padding-top:12px;max-width:70ch}
+footer a{color:var(--accent)}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Amazing Hand 組裝表</h1>
+    <p class="sub">Seeed Studio 套件版。每做完一步就打勾，手指的步驟分四根各自勾選。每步的「看圖」會展開官方手冊對應頁。</p>
+  </header>
+
+  <div class="bar" role="status" aria-live="polite">
+    <div class="bar-top">
+      <div class="next" id="next">下一步：讀取中</div>
+      <div class="count" id="count">0 / 0</div>
+    </div>
+    <div class="track"><div class="fill" id="fill"></div></div>
+    <div class="sync" id="sync">正在連接進度資料</div>
+  </div>
+
+  <div id="phases"></div>
+
+  <footer>
+    流程與圖片來自 Pollen Robotics 的 <a href="https://github.com/pollen-robotics/AmazingHand/blob/main/docs/AmazingHand_Assembly.pdf">AmazingHand 組裝手冊</a>（專案 Apache 2.0，機構設計 CC BY 4.0）。Seeed 套件的差異整理自買家筆記與 Seeed 論壇，實物以你手上的零件為準。
+  </footer>
+</div>
+
+<script>
+const FINGERS=[
+  {k:'idx',n:'食指',ids:[1,2]},
+  {k:'mdl',n:'中指',ids:[3,4]},
+  {k:'rng',n:'無名指',ids:[5,6]},
+  {k:'thb',n:'拇指',ids:[7,8]}
+];
+const PHASES=[
+ {id:'p0',no:'0',title:'開箱與通電前檢查',steps:[
+  {id:'s0_1',t:'清點零件',d:'對照零件圖，把同類零件分盒。確認有：SCS0009 ×8、驅動板、變壓器與電源線、分線板 ×8、三線 ×8、球頭 ×16、D2 插銷、螺絲包、手指與手掌結構件、附贈工具。',pg:[5]},
+  {id:'s0_2',t:'確認變壓器是 5V',d:'看變壓器標籤上的輸出電壓。SCS0009 的工作電壓是 4.0–7.4V，Seeed 以 5V 驗證。',w:'標示 12V 就不要接，會燒伺服機。'},
+  {id:'s0_3',t:'驅動板設成 USB 模式',d:'板背兩組焊盤要有焊錫橋接；正面 2-pin 排針插上跳線帽。電源線鎖進端子，正負極對好。'},
+  {id:'s0_4',t:'準備電腦',d:'安裝 Python，執行 <code>pip install rustypot numpy</code>，下載官方 repo 的 PythonExample，以及 Feetech 除錯工具（Windows 用 FD 1.9.8.5，Linux 可用 Qt 版）。'},
+  {id:'s0_5',t:'8 顆伺服機逐一測試並設 ID',d:'一次只接一顆：鮑率 1000000 搜尋到 ID 1 → 轉動測試 → 先把 Lock 設成 0 → 改成 1–8 → 斷電重插確認 ID 還在 → 貼上號碼。',w:'手冊排在校正階段才設 ID；提前做可以在裝進手指前抓出壞件。插拔前先斷電。',pg:[21]}
+ ]},
+ {id:'p1',no:'1',title:'零件前處理',note:'一次把四根手指的份做完。套件已處理好的項目直接打勾。',steps:[
+  {id:'s1_1',t:'修舵盤 ×8',d:'取十字舵盤，在最靠近中心的那個孔鑽孔，剪掉其餘三臂，把切口修平。',w:'手冊用 1.5mm 鑽頭再攻 M2 牙；套件只附 2mm 鑽頭，有買家全程用 2mm 完成。',pg:[6]},
+  {id:'s1_2',t:'球頭螺絲裁短 ×8',d:'把球頭附的 M2x12 螺絲裁成 9mm。裁之前先旋上螺帽，裁完退出螺帽可以順牙。套件若已附短螺絲就跳過。',pg:[6]},
+  {id:'s1_3',t:'準備螺桿',d:'連桿用短螺桿 ×8（14–16mm）、Link 用長螺桿 ×4（26–28mm）。套件可能已裁好，或把長螺桿換成帶頭螺栓。',pg:[6]},
+  {id:'s1_4',t:'修樞軸孔',d:'用 2mm 鑽頭修 Proximal、Distal、Gimbal、Link 上的 D2 孔。照圖分兩類：零件要繞著插銷轉的孔來回多鑽幾次到滑配；用來壓住插銷的孔只過一次，保持緊配。',w:'滑配孔不要鑽到鬆晃，間隙越小手指越穩。',pg:[7]},
+  {id:'s1_5',t:'清毛邊',d:'把支撐面和毛邊修平，會互相摩擦的面要光滑。',pg:[8]},
+  {id:'s1_6',t:'組長度治具',d:'治具的兩個孔保持緊配，壓入 2 支 D2x16 插銷到底。兩支插銷的軸距是 33mm。',pg:[10]}
+ ]},
+ {id:'p2',no:'2',title:'手指組裝',per:true,note:'建議先把食指從組裝做到校正完，再做其餘三根。',steps:[
+  {id:'s2_1',t:'球頭連桿 ×2',d:'短螺桿先旋入一個球頭到變緊，套上墊圈，再旋上另一個球頭，兩端都貼到墊圈。把兩個球頭轉成平行，套到治具上應該不用硬壓。量好後把其中一端轉 90°。',w:'這個長度決定手指行程，是全手最關鍵的尺寸。',pg:[11]},
+  {id:'s2_2',t:'舵盤接上連桿 ×2',d:'M2x9 螺絲穿過球頭旋入舵盤孔，一露頭就套上螺帽，鎖到球頭貼住舵盤、螺帽貼住舵盤另一面。',w:'Seeed 的球頭一側凸出較多，螺絲頭放在凸出較少的那側，舵盤側才有間隙。',pg:[12]},
+  {id:'s2_3',t:'指節機構',d:'用 D2x10 插銷把 Link 接到 Distal，Gimbal 同樣用 D2x10 接上；再用 2 支 D2x16 把這組接到 Proximal。插銷都壓到不凸出。完成後彎曲、伸直全程要順。',pg:[13,14]},
+  {id:'s2_4',t:'Link 橫桿',d:'把長螺桿旋入 Link 剩下的孔，兩端露出等長。Seeed 套件這支可能是帶頭螺栓。',pg:[15]},
+  {id:'s2_5',t:'套上軟殼',d:'手指伸直，先套近端殼，兩側各鎖 1 顆；再套遠端殼，兩側各 1 顆。',w:'輕鎖即可。鎖太深會刮到內部螺桿，也會穿破軟殼。',pg:[16]},
+  {id:'s2_6',t:'壓入襯套',d:'Finger frame part1 兩側各壓入 1 個襯套，抵著平面壓到底。',pg:[17]},
+  {id:'s2_7',t:'固定兩顆伺服機',d:'兩顆 SCS0009 並排，用 frame part1 和 part2 夾住，鎖 4 顆 2x7 螺絲。面向出力軸、指尖朝上時，奇數 ID 在右、偶數 ID 在左。',w:'出力軸要在遠離襯套的那一端。',pg:[18,21]},
+  {id:'s2_8',t:'手指裝上框架',d:'Gimbal 的軸插入襯套，另一側放上大墊片，鎖 2.5x8 螺絲到墊片碰到襯套就停。手指左右擺動要順、不晃。',pg:[19]},
+  {id:'s2_9',t:'連桿接上 Link',d:'兩支連桿的自由端球頭套到 Link 橫桿兩端，舵盤朝向伺服機出力軸。鎖上 M2 螺帽，碰到後再多半圈；會鬆就點膠。',w:'舵盤先不要鎖到伺服機上，校正時才鎖。',pg:[20]}
+ ]},
+ {id:'p3',no:'3',title:'單指校正',per:true,note:'每根手指校正完才裝上手掌，裝上去之後很難再調舵盤。',steps:[
+  {id:'s3_1',t:'兩顆接上同一匯流排',d:'這根手指的兩顆伺服機接到同一個分線板，再接到驅動板。匯流排上只接這兩顆。驅動板經 USB hub 接電腦。',pg:[21]},
+  {id:'s3_2',t:'伺服機回中位',d:'執行 <code>bash right_hand/tools/finger_cal.sh center &lt;奇數 ID&gt; &lt;偶數 ID&gt;</code>。兩顆會轉到中位並保持扭力，等你裝舵盤。',pg:[22]},
+  {id:'s3_3',t:'裝上舵盤',d:'伺服機保持在中位，把兩個舵盤套上出力軸：兩個耳朵各朝外側、連成一條水平線，選最接近的那一齒。鎖上 M2x4，再按 Enter 關扭力。',pg:[22]},
+  {id:'s3_4',t:'微調中位',d:'執行 <code>bash right_hand/tools/finger_cal.sh finger &lt;奇數 ID&gt; &lt;偶數 ID&gt; [中位A 中位B]</code>。手指會分段開合一次，閉合時停住；看舵盤耳朵是否對齊伺服機中線，沒對齊就改中位值再跑。',w:'左右兩顆鏡像安裝，加減方向不直觀，一次改 2–3 度。修正超過 ±30° 代表舵盤裝錯齒，拆下重裝。',pg:[23]},
+  {id:'s3_5',t:'記下中位值',d:'把這兩個數字填進下面的表格。',pg:[24]}
+ ]},
+ {id:'p4',no:'4',title:'手掌組裝',note:'Seeed 套件把手冊裡 6mm、8mm 的自攻螺絲統一成約 7mm。',steps:[
+  {id:'s4_1',t:'食指裝上 Hand plate',d:'俯視時最左的位置。線先穿過方孔，鎖 3 顆自攻螺絲。',pg:[29,30]},
+  {id:'s4_2',t:'中指、無名指',d:'中指在中間、無名指在右，各鎖 3 顆。',pg:[30]},
+  {id:'s4_3',t:'拇指裝上 Wrist interface',d:'鎖 3 顆。線走內側（手指那一側），不要夾到。',pg:[31]},
+  {id:'s4_4',t:'手腕與手掌合體',d:'拇指的線穿過 Hand plate 剩下的開口，Wrist interface 和 Hand plate 鎖 4 顆。',pg:[32]},
+  {id:'s4_5',t:'串接 8 顆伺服機',d:'全部接到同一條匯流排。手冊的接法是 8 片分線板串成一串：每片插 1 顆伺服機，另外兩個插座用對接線連到前後兩片，最後一片空出的插座接驅動板。',w:'斷電再插拔。分線板背面焊點裸露，不要碰到金屬。',pg:[33]},
+  {id:'s4_6',t:'全手測試',d:'執行 <code>bash right_hand/tools/finger_cal.sh hand</code>。8 顆都要在線；先全部張開，再讓食指、中指、無名指、拇指輪流分段閉合再張開，一次只動一根。',w:'變壓器接在有開關的延長線上，第一次跑時手放在開關上，動作異常立刻斷電。'}
+ ]},
+ {id:'p5',no:'5',title:'外殼',steps:[
+  {id:'s5_1',t:'軟掌殼',d:'從拇指開口套入，殼的耳片搭在 Hand plate 上面。先鎖 Hand plate 上的 2 顆，再鎖 Wrist interface 上的 4 顆。',pg:[35]},
+  {id:'s5_2',t:'上蓋',d:'線從上蓋開口拉出，確認和掌殼的接縫密合，鎖 4 顆。',pg:[36]}
+ ]}
+];
+
+/* ---------- state ---------- */
+let state={done:{},mid:{},hand:'R'};
+const LS='ah-build-state';
+let ref=null,exists=false,pending=null,busy=false,readOnly=false,ready=false;
+
+function keysInOrder(){
+  const out=[];
+  const flat=p=>PHASES.find(x=>x.id===p).steps;
+  flat('p0').forEach(s=>out.push({key:s.id,s,ph:'0'}));
+  flat('p1').forEach(s=>out.push({key:s.id,s,ph:'1'}));
+  FINGERS.forEach(f=>{
+    flat('p2').forEach(s=>out.push({key:s.id+'_'+f.k,s,f,ph:'2'}));
+    flat('p3').forEach(s=>out.push({key:s.id+'_'+f.k,s,f,ph:'3'}));
+  });
+  flat('p4').forEach(s=>out.push({key:s.id,s,ph:'4'}));
+  flat('p5').forEach(s=>out.push({key:s.id,s,ph:'5'}));
+  return out;
+}
+const ORDER=keysInOrder();
+function stepNo(s){const m=s.id.match(/^s(\d)_(\d)$/);return m[1]+'.'+m[2];}
+
+/* ---------- build DOM once ---------- */
+function h(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e;}
+function figureFor(s){
+  const fig=h('figure');fig.hidden=true;
+  s.pg.forEach(p=>{const im=document.createElement('img');im.alt='官方組裝手冊第 '+p+' 頁';im.dataset.src='img/p'+String(p).padStart(2,'0')+'.jpg';im.width=1100;im.height=619;fig.appendChild(im);});
+  const cap=h('figcaption');cap.textContent='官方組裝手冊第 '+s.pg.join('、')+' 頁';fig.appendChild(cap);
+  return fig;
+}
+function build(){
+  const root=document.getElementById('phases');
+  root.style.display='flex';root.style.flexDirection='column';root.style.gap='28px';
+  PHASES.forEach(ph=>{
+    const sec=h('section');sec.id=ph.id;
+    const head=h('div','ph-head');
+    head.appendChild(h('span','ph-no','階段 '+ph.no));
+    const h2=h('h2');h2.textContent=ph.title;head.appendChild(h2);
+    const pc=h('span','ph-count');pc.id='pc_'+ph.id;head.appendChild(pc);
+    sec.appendChild(head);
+    if(ph.note){const n=h('p','ph-note');n.textContent=ph.note;sec.appendChild(n);}
+    ph.steps.forEach(s=>{
+      const row=h('div','step'+(ph.per?' pf':''));row.id='row_'+s.id;
+      const body=h('div','body');
+      const ttl=h('div','ttl');
+      const no=h('span','no');no.textContent=stepNo(s);ttl.appendChild(no);
+      const tx=h('span');tx.textContent=s.t;ttl.appendChild(tx);
+      const tag=h('span','tag');tag.textContent='下一步';tag.hidden=true;tag.id='tag_'+s.id;ttl.appendChild(tag);
+      body.appendChild(ttl);
+      body.appendChild(h('p','desc',s.d));
+      if(s.w){body.appendChild(h('p','warn','<b>注意</b>'+s.w));}
+      let fig=null;
+      if(s.pg){
+        const b=h('button','pgbtn');b.type='button';b.id='btn_'+s.id;b.textContent='看圖';b.setAttribute('aria-expanded','false');
+        fig=figureFor(s);
+        b.addEventListener('click',()=>{
+          const open=fig.hidden;fig.hidden=!open;b.textContent=open?'收起圖':'看圖';b.setAttribute('aria-expanded',String(open));
+          if(open)fig.querySelectorAll('img').forEach(im=>{if(!im.src)im.src=im.dataset.src;});
+        });
+        body.appendChild(b);
+      }
+      if(ph.per){
+        row.appendChild(body);
+        const fg=h('div','fg');
+        FINGERS.forEach(f=>{
+          const key=s.id+'_'+f.k;
+          const lab=h('label');lab.id='lab_'+key;
+          const cb=document.createElement('input');cb.type='checkbox';cb.id='c_'+key;cb.dataset.key=key;
+          cb.setAttribute('aria-label',stepNo(s)+' '+s.t+'：'+f.n);
+          lab.appendChild(cb);const sp=h('span');sp.textContent=f.n;lab.appendChild(sp);
+          fg.appendChild(lab);
+        });
+        row.appendChild(fg);
+      }else{
+        const cb=document.createElement('input');cb.type='checkbox';cb.id='c_'+s.id;cb.dataset.key=s.id;
+        cb.setAttribute('aria-label',stepNo(s)+' '+s.t);
+        row.appendChild(cb);row.appendChild(body);
+      }
+      if(fig)row.appendChild(fig);
+      sec.appendChild(row);
+    });
+    if(ph.id==='p3')sec.appendChild(calibBlock());
+    root.appendChild(sec);
+  });
+  root.addEventListener('change',e=>{
+    const t=e.target;
+    if(t.matches('input[type=checkbox][data-key]')){save({done:{[t.dataset.key]:t.checked}});}
+    else if(t.matches('input[data-mid]')){
+      const v=t.value===''?null:Math.max(-60,Math.min(60,Math.round(Number(t.value)*10)/10));
+      save({mid:{[t.dataset.mid]:(v===null||Number.isNaN(v))?null:v}});
+    }else if(t.matches('input[name=hand]')){save({hand:t.value});}
+  });
+}
+function calibBlock(){
+  const box=h('div','calib');
+  const t=h('h3');t.textContent='中位校正值（度）';box.appendChild(t);
+  const wrap=h('div','tbl');const tb=document.createElement('table');
+  tb.innerHTML='<thead><tr><th>手指</th><th>ID</th><th>中位值</th><th>ID</th><th>中位值</th></tr></thead>';
+  const body=document.createElement('tbody');
+  FINGERS.forEach(f=>{
+    const tr=document.createElement('tr');
+    const td=document.createElement('td');td.textContent=f.n;tr.appendChild(td);
+    f.ids.forEach(id=>{
+      const a=h('td','id');a.textContent=id;tr.appendChild(a);
+      const b=h('td','mid');const inp=document.createElement('input');inp.type='number';inp.step='1';inp.min='-60';inp.max='60';inp.id='mid_'+id;inp.dataset.mid=String(id);inp.placeholder='0';inp.setAttribute('aria-label','ID '+id+' 中位值');b.appendChild(inp);tr.appendChild(b);
+    });
+    body.appendChild(tr);
+  });
+  tb.appendChild(body);wrap.appendChild(tb);box.appendChild(wrap);
+  const side=h('div','side');
+  side.innerHTML='<span>這隻手是</span><label><input type="radio" name="hand" id="hand_R" value="R">右手</label><label><input type="radio" name="hand" id="hand_L" value="L">左手</label>';
+  box.appendChild(side);
+  const out=h('div','out');
+  const pre=h('pre');pre.id='midout';out.appendChild(pre);
+  const btn=h('button','copy');btn.type='button';btn.id='copybtn';btn.textContent='複製';
+  btn.addEventListener('click',()=>{
+    const txt=pre.textContent;
+    const ok=()=>{btn.textContent='已複製';setTimeout(()=>btn.textContent='複製',1500);};
+    const fallback=()=>{const r=document.createRange();r.selectNodeContents(pre);const s=getSelection();s.removeAllRanges();s.addRange(r);btn.textContent='已選取，請手動複製';};
+    try{navigator.clipboard.writeText(txt).then(ok,fallback);}catch(_){fallback();}
+  });
+  out.appendChild(btn);box.appendChild(out);
+  return box;
+}
+
+/* ---------- render from state ---------- */
+function apply(){
+  const done=state.done||{},mid=state.mid||{};
+  let n=0;const per={};
+  ORDER.forEach(o=>{
+    const cb=document.getElementById('c_'+o.key);const v=!!done[o.key];
+    if(cb&&cb.checked!==v)cb.checked=v;
+    per[o.ph]=per[o.ph]||[0,0];per[o.ph][1]++;if(v){n++;per[o.ph][0]++;}
+  });
+  PHASES.forEach(ph=>{
+    const c=per[ph.no]||[0,0];document.getElementById('pc_'+ph.id).textContent=c[0]+' / '+c[1];
+    ph.steps.forEach(s=>{
+      const row=document.getElementById('row_'+s.id);
+      const all=ph.per?FINGERS.every(f=>done[s.id+'_'+f.k]):!!done[s.id];
+      row.classList.toggle('done',all);row.classList.remove('is-next');
+      document.getElementById('tag_'+s.id).hidden=true;
+      if(ph.per)FINGERS.forEach(f=>document.getElementById('lab_'+s.id+'_'+f.k).classList.remove('cur'));
+    });
+  });
+  const total=ORDER.length;
+  document.getElementById('count').textContent=n+' / '+total;
+  document.getElementById('fill').style.width=(total?n/total*100:0)+'%';
+  const nx=ORDER.find(o=>!done[o.key]);
+  const nextEl=document.getElementById('next');
+  if(nx){
+    nextEl.innerHTML='下一步：<b></b>';
+    nextEl.querySelector('b').textContent=stepNo(nx.s)+' '+nx.s.t+(nx.f?'（'+nx.f.n+'）':'');
+    document.getElementById('row_'+nx.s.id).classList.add('is-next');
+    document.getElementById('tag_'+nx.s.id).hidden=false;
+    if(nx.f)document.getElementById('lab_'+nx.key).classList.add('cur');
+  }else{nextEl.textContent='全部完成，手掌組好了。';}
+  for(let id=1;id<=8;id++){
+    const inp=document.getElementById('mid_'+id);const v=mid[id];
+    if(inp&&document.activeElement!==inp){const sv=(v===null||v===undefined)?'':String(v);if(inp.value!==sv)inp.value=sv;}
+  }
+  const hand=state.hand==='L'?'L':'R';
+  document.getElementById('hand_'+hand).checked=true;
+  const arr=[];for(let id=1;id<=8;id++){const v=mid[id];arr.push((v===null||v===undefined)?0:v);}
+  document.getElementById('midout').textContent='Side = '+(hand==='R'?1:2)+'  # '+(hand==='R'?'右手':'左手')+'\nMiddlePos = ['+arr.join(', ')+']';
+  document.querySelectorAll('input[data-key],input[data-mid],input[name=hand]').forEach(i=>{i.disabled=readOnly;});
+}
+function merge(a,b){for(const k in b){const v=b[k];if(v&&typeof v==='object'&&!Array.isArray(v)){a[k]=merge((a[k]&&typeof a[k]==='object')?a[k]:{},v);}else a[k]=v;}return a;}
+function setSync(t){document.getElementById('sync').textContent=t;}
+
+/* ---------- persistence ---------- */
+function save(patch){
+  merge(state,patch);apply();
+  if(!ref){try{localStorage.setItem(LS,JSON.stringify(state));}catch(_){}return;}
+  pending=merge(pending||{},patch);flush();
+}
+async function flush(){
+  if(busy||!pending||!ready)return;busy=true;
+  const p=pending;pending=null;
+  try{
+    if(exists)await ref.update(p);else{await ref.set(JSON.parse(JSON.stringify(state)));exists=true;}
+    setSync('進度已儲存，Claude 也讀得到');
+  }catch(e){
+    if(e&&e.code==='invalid_argument'){readOnly=true;setSync('你在這個頁面是唯讀，無法勾選');apply();}
+    else setSync('儲存失敗，請再勾一次（'+((e&&e.code)||'unavailable')+'）');
+  }
+  busy=false;if(pending)flush();
+}
+function start(){
+  build();apply();
+  const boot=async()=>{
+    let db=null;
+    try{db=window.claude&&window.claude.use?await window.claude.use('db'):null;}catch(_){db=null;}
+    if(!db){
+      try{const s=JSON.parse(localStorage.getItem(LS)||'null');if(s)merge(state,s);}catch(_){}
+      setSync('進度只存在這個瀏覽器');apply();return;
+    }
+    ref=db.doc('build/state');
+    ref.onSnapshot(snap=>{
+      exists=snap.exists;
+      if(snap.exists){const d=snap.data()||{};state={done:Object.assign({},d.done||{}),mid:Object.assign({},d.mid||{}),hand:d.hand==='L'?'L':'R'};if(pending)merge(state,JSON.parse(JSON.stringify(pending)));}
+      setSync(snap.metadata&&snap.metadata.hasPendingWrites?'儲存中':'進度已同步，Claude 也讀得到');
+      apply();
+      if(!ready){ready=true;flush();}
+    },e=>{setSync('進度同步中斷，重新整理頁面可恢復');});
+  };
+  boot();
+}
+start();
+</script>
+
+</body>
+</html>
