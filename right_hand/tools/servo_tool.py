@@ -18,12 +18,14 @@
   python servo_tool.py hand   PORT [MID_1 … MID_8]
                                              全手：8 顆都接上，四根手指輪流開合一次
   python servo_tool.py gesture PORT NAME [MID_1 … MID_8]
-                                             全手比一個固定手勢、停住、再張開。NAME 目前只有 ok
+                                             全手比一個固定手勢、停住、再張開。NAME 目前只有 ok。
+                                             四根手指同時動：每一輪每顆只前進一小段
 
 `test` 只用在還沒裝進手指、出力軸沒有負載的伺服機上。
 `center`、`finger` 一次只接一根手指的兩顆：A 是奇數 ID、B 是 A+1。MID 是中位修正，
 單位是度，預設 0。`hand` 要 ID 1–8 全部在線；一次只動一根手指，其餘保持張開。
-`gesture` 的姿態是寫死在這個檔案裡的固定表，不接受任意角度。
+`gesture` 的姿態是寫死在這個檔案裡的固定表，不接受任意角度；8 顆同時動，所以每一輪
+都檢查有沒有哪一顆跟不上、電壓有沒有掉。
 執行 `hand`、`gesture` 時，人要能隨手切斷伺服機電源（例如變壓器接在有開關的延長線上）。
 """
 import glob
@@ -58,10 +60,14 @@ HAND_IDS = tuple(range(1, 9))
 FINGER_NAMES = {1: "食指", 3: "中指", 5: "無名指", 7: "拇指"}
 
 # 固定手勢（右手）。key 是每根手指的奇數 ID，值是 (奇數 ID 角度, 偶數 ID 角度)，單位度，
-# 不含中位修正。兩顆角度不對稱時手指會同時彎曲並側擺。order 是擺出手勢時的先後；
-# 收回時反過來。會互相接觸的手指排在最後動。
+# 不含中位修正。兩顆角度不對稱時手指會同時彎曲並側擺。四根手指是同時動的；order 只決定
+# 每一輪裡下指令的先後，以及到位後逐指確認、列印的順序（收回時反過來）。
 SERVO_LIMIT_DEG = 95.0       # 任何一顆的目標（含中位修正）都不得超出 ±95°
 HOLD_MAX_S = 30              # 手勢最多停這麼久，沒按 Enter 也會自己收回
+# 多根手指同時動：把路徑切成很多輪，每一輪每顆只前進一小段，所有顆在最後一輪同時到位。
+TOGETHER_STEP_DEG = 3.0      # 走最遠的那顆每一輪前進這麼多，其餘按比例
+TOGETHER_PERIOD_S = 0.03     # 每一輪下完指令後等這麼久再讀位置
+TOGETHER_LAG_DEG = 12.0      # 途中任何一顆落後它這一輪的目標超過這個值，就當成卡住
 GESTURES = {
     # 起點是上游 AmazingHand_Demo.py 的 Perfect()（右手）：食指 (50, -50)、拇指 (65, 12)。
     # 2026-10-07 在這隻手上調了兩輪（一根手指的彎曲 = (奇 - 偶) / 2，側擺 = (奇 + 偶) / 2）：
@@ -314,6 +320,36 @@ def _move_pair(c, a, b, deg_a, deg_b, tolerance):
     return near, now_a, now_b
 
 
+def _move_together(c, plan):
+    """多根手指同時走到各自的目標。plan 是 [(奇數 ID, 奇數 ID 角度, 偶數 ID 角度, 標籤), …]。
+
+    每一輪依序對每一顆下一小段的目標，然後讀回位置與電壓；有一顆跟不上或電壓過低就
+    立刻回傳 False（呼叫端負責關扭力）。最後一輪之後再逐指等它停下來並印出讀值。
+    """
+    goal = {}
+    for a, deg_a, deg_b, _ in plan:
+        goal[a], goal[a + 1] = deg_a, deg_b
+    start = {sid: math.degrees(one(c.read_present_position(sid))) for sid in goal}
+    rounds = max(1, math.ceil(max(abs(goal[sid] - start[sid]) for sid in goal) / TOGETHER_STEP_DEG))
+    for k in range(1, rounds + 1):
+        sub = {sid: start[sid] + (goal[sid] - start[sid]) * k / rounds for sid in goal}
+        for sid in goal:
+            c.write_goal_position(sid, math.radians(sub[sid]))
+        time.sleep(TOGETHER_PERIOD_S)
+        for sid in goal:
+            now = math.degrees(one(c.read_present_position(sid)))
+            if abs(now - sub[sid]) > TOGETHER_LAG_DEG:
+                print("  %s ID %d 途中這一輪的目標 %+6.1f° 實際 %+6.1f°   卡住（第 %d／%d 輪）" % (
+                    FINGER_NAMES[sid - (sid + 1) % 2], sid, sub[sid], now, k, rounds))
+                return False
+            volt = one(c.read_present_voltage(sid)) / 10.0
+            if volt < VOLT_MIN:
+                print("  同時動作途中 ID %d 電壓掉到 %.1f V，低於 %.1f V，停止（第 %d／%d 輪）。" % (
+                    sid, volt, VOLT_MIN, k, rounds))
+                return False
+    return all(_step_to(c, a, a + 1, deg_a, deg_b, label) for a, deg_a, deg_b, label in plan)
+
+
 def _torque_off(c, ids):
     ok = True
     for sid in ids:
@@ -432,7 +468,7 @@ def cmd_hand(port, mids=None):
 
 
 def cmd_gesture(port, name, mids=None):
-    """全手比一個固定手勢：全部張開 → 依序擺出 → 停住等人 → 反序張開 → 關扭力。"""
+    """全手比一個固定手勢：全部張開 → 四指同時擺出 → 停住等人 → 四指同時張開 → 關扭力。"""
     g = GESTURES.get(name)
     if g is None:
         print("沒有「%s」這個手勢。可用的：%s" % (name, "、".join(sorted(GESTURES))))
@@ -455,25 +491,25 @@ def cmd_gesture(port, name, mids=None):
     wait_enter("要比「%s」。手的周圍淨空，一隻手放在伺服機電源的開關上。按 Enter 開始，Ctrl-C 隨時中止。" % g["label"])
     ok = True
 
-    def open_finger(a):
-        return _step_to(c, a, a + 1, mids[a - 1] + FINGER_OPEN_DEG, mids[a] - FINGER_OPEN_DEG,
-                        FINGER_NAMES[a] + "張開")
+    def opened(fingers):
+        return [(a, mids[a - 1] + FINGER_OPEN_DEG, mids[a] - FINGER_OPEN_DEG, FINGER_NAMES[a] + "張開")
+                for a in fingers]
     try:
         _engage(c, HAND_IDS, FINGER_SPEED)
-        print("== 全部張開")
-        ok = all(open_finger(a) for a, _ in FINGER_PAIRS)
+        print("== 全部張開（四指同時）")
+        ok = _move_together(c, opened(a for a, _ in FINGER_PAIRS))
         if ok:
-            print("== 擺出「%s」" % g["label"])
-            ok = all(_step_to(c, a, a + 1, targets[a][0], targets[a][1], FINGER_NAMES[a]) for a in g["order"])
+            print("== 擺出「%s」（四指同時）" % g["label"])
+            ok = _move_together(c, [(a, targets[a][0], targets[a][1], FINGER_NAMES[a]) for a in g["order"]])
         if ok:
             pressed = wait_enter("已比出「%s」。按 Enter 收回；%d 秒內沒按也會自己收回。" % (g["label"], HOLD_MAX_S),
                                  timeout=HOLD_MAX_S)
             if not pressed:
                 print("（%d 秒到，自動收回）" % HOLD_MAX_S)
-            print("== 收回")
-            ok = all(open_finger(a) for a in reversed(g["order"]))
+            print("== 收回（四指同時）")
+            ok = _move_together(c, opened(reversed(g["order"])))
         if not ok:
-            print("沒有完成，立刻關扭力。如果停在最後動的那根手指，多半是指尖比預期早碰到；把這段輸出貼回來調整姿態。")
+            print("沒有完成，立刻關扭力。如果卡住的是食指或拇指，多半是指尖比預期早碰到；把這段輸出貼回來調整姿態。")
     finally:
         ok = _torque_off(c, HAND_IDS) and ok
     print("結果：" + ("完成，扭力已關" if ok else "異常，扭力已關"))

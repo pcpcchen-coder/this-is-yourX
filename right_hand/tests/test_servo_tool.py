@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "tools"))
 pytest.importorskip("rustypot")
 
 import servo_tool  # noqa: E402
-from fake_scs_bus import (ADDR_GOAL, ADDR_ID, ADDR_LOCK, ADDR_TORQUE, ADDR_VOLT,  # noqa: E402
+from fake_scs_bus import (ADDR_GOAL, ADDR_ID, ADDR_LOCK, ADDR_POS, ADDR_TORQUE, ADDR_VOLT,  # noqa: E402
                           FakeBus, FakeServo)
 
 
@@ -168,14 +168,15 @@ MID_RAW = 511
 
 
 class Enter:
-    """取代 wait_enter：記下每次被呼叫時兩顆的扭力狀態。"""
+    """取代 wait_enter：記下每次被呼叫時每一顆的扭力狀態與位置（原始值）。"""
 
     def __init__(self, servos, raise_on=None):
         self.servos, self.raise_on, self.seen = servos, raise_on, []
-        self.timeouts, self.pressed = [], True
+        self.timeouts, self.pressed, self.positions = [], True, []
 
     def __call__(self, msg, timeout=None):
         self.seen.append([s.mem[ADDR_TORQUE] for s in self.servos])
+        self.positions.append([(s.mem[ADDR_POS] << 8) | s.mem[ADDR_POS + 1] for s in self.servos])
         self.timeouts.append(timeout)
         if self.raise_on == len(self.seen):
             raise KeyboardInterrupt
@@ -464,22 +465,80 @@ def test_hand_applies_per_servo_middle_offsets(monkeypatch):
 
 # --- gesture：固定手勢 ----------------------------------------------------
 
-def test_gesture_ok_opens_poses_in_order_holds_then_returns_in_reverse(monkeypatch, capsys):
+STEP_RAW = servo_tool.TOGETHER_STEP_DEG * 1023 / 300 + 1     # 一輪最多前進的原始值，含取整誤差
+
+
+def test_gesture_ok_opens_poses_holds_then_returns_with_all_fingers_moving_together(monkeypatch, capsys):
     servos, enter = make_hand(monkeypatch)
     with FakeBus(servos) as bus:
         assert run("gesture", bus.port, "ok") == 0
-        order = goal_order_after_engage(bus)
-    assert order == (list(range(1, 9))                      # 全部張開
-                     + [3, 4, 5, 6, 1, 2, 7, 8]             # 中指、無名指、食指、拇指
-                     + [7, 8, 1, 2, 5, 6, 3, 4])            # 反序收回
     assert enter.seen == [[0] * 8, [1] * 8]                  # 開始前沒扭力；停住時 8 顆都有
     assert enter.timeouts == [None, servo_tool.HOLD_MAX_S]   # 停住那次有上限
     assert all(sv.torque_history == [1, 0] for sv in servos)
-    pose = {sv.sid: sv.goal_history[2] for sv in servos}     # [停在原地, 張開, 手勢, 張開]
+    pose = dict(zip(range(1, 9), enter.positions[1]))        # 停住那一刻的位置
     assert pose[1] > MID_RAW > pose[2]                        # 食指彎曲
     assert pose[7] - MID_RAW > 5 * abs(pose[8] - MID_RAW)     # 拇指兩顆不對稱：彎曲加側擺
-    assert all(sv.goal_history[-1] == sv.goal_history[1] for sv in servos)   # 最後回到張開
-    assert "完成，扭力已關" in capsys.readouterr().out
+    assert pose[3] == pose[4] == MID_RAW                      # 中指在中位
+    final = [sv.goal_history[-1] for sv in servos]            # 最後回到張開：奇數同一個值、偶數鏡像
+    assert final[0] == final[2] == final[4] == final[6] < MID_RAW
+    assert final[1] == final[3] == final[5] == final[7] > MID_RAW
+    out = capsys.readouterr().out
+    assert "完成，扭力已關" in out and out.count("四指同時") == 3
+
+
+def test_gesture_moves_every_servo_a_small_step_per_round(monkeypatch):
+    servos, _ = make_hand(monkeypatch)
+    with FakeBus(servos) as bus:
+        assert run("gesture", bus.port, "ok") == 0
+        order = goal_order_after_engage(bus)
+    for sv in servos:
+        steps = [abs(b - a) for a, b in zip(sv.goal_history, sv.goal_history[1:])]
+        assert max(steps) <= STEP_RAW, sv.sid                 # 沒有哪一顆一次跳一大段
+    # 同時動的那幾段裡，同一顆的兩次指令之間，其餘 7 顆都各被下過一次指令
+    interleaved = sum(1 for i in range(len(order) - 8)
+                      if order[i] == order[i + 8] and sorted(order[i:i + 8]) == list(range(1, 9)))
+    assert interleaved > 80
+    # 拇指奇數那顆走最遠（張開 -30° → +90°），它的輪數決定整段的輪數
+    assert len(servos[0].goal_history) == len(servos[6].goal_history)
+
+
+def test_move_together_brings_all_fingers_to_their_goals_in_the_same_round():
+    servos = [FakeServo(i) for i in range(1, 5)]
+    with FakeBus(servos) as bus:
+        c = servo_tool.open_bus(bus.port)
+        assert servo_tool._move_together(c, [(1, 60, -60, "a"), (3, 6, -6, "b")]) is True
+    far, near = servos[0].goal_history, servos[2].goal_history
+    rounds = len(far) - 1                                     # 最後一筆是到位確認時重下的同一個目標
+    assert rounds == 20 and len(near) == len(far)             # 60° / 3° = 20 輪，走得近的也分成 20 輪
+    assert far[-1] == far[-2] and near[-1] == near[-2]
+    assert far.index(far[-1]) == near.index(near[-1]) == rounds - 1   # 兩根在同一輪到位
+
+
+def test_move_together_stops_every_finger_when_one_servo_falls_behind(capsys):
+    servos = [FakeServo(i, travel=(450, 560) if i == 3 else None) for i in range(1, 5)]
+    with FakeBus(servos) as bus:
+        c = servo_tool.open_bus(bus.port)
+        assert servo_tool._move_together(c, [(1, 60, -60, "a"), (3, 60, -60, "b")]) is False
+    lag_raw = servo_tool.TOGETHER_LAG_DEG * 1023 / 300
+    assert max(servos[2].goal_history) - 560 <= lag_raw + STEP_RAW    # 卡住的那顆沒有被一路推到底
+    assert max(servos[0].goal_history) < MID_RAW + 60 * 1023 / 300 - 50   # 沒卡的那根也跟著停在半路
+    out = capsys.readouterr().out
+    assert "ID 3" in out and "卡住" in out and "中指" in out
+
+
+def test_move_together_stops_when_voltage_sags_mid_move(capsys):
+    class Sagging(FakeServo):
+        def write(self, addr, data):
+            super().write(addr, data)
+            if len(self.goal_history) >= 5:
+                self.mem[ADDR_VOLT] = 38
+
+    servos = [FakeServo(1), Sagging(2)]
+    with FakeBus(servos) as bus:
+        c = servo_tool.open_bus(bus.port)
+        assert servo_tool._move_together(c, [(1, 60, -60, "a")]) is False
+    assert len(servos[0].goal_history) == 5                   # 第 5 輪就停，沒有走完 20 輪
+    assert "電壓掉到" in capsys.readouterr().out
 
 
 def test_gesture_returns_by_itself_when_nobody_presses_enter(monkeypatch, capsys):
@@ -522,7 +581,9 @@ def test_gesture_stops_without_holding_when_the_thumb_cannot_reach_the_pose(monk
         assert run("gesture", bus.port, "ok") == 1
     assert len(enter.seen) == 1                               # 沒有進到「停住」
     assert all(sv.torque_history[-1] == 0 for sv in servos)
-    assert "卡住" in capsys.readouterr().out
+    assert max(servos[0].goal_history) < MID_RAW + 74 * 1023 / 300 - 50    # 食指也停在半路，沒有擺到底
+    out = capsys.readouterr().out
+    assert "拇指 ID 7" in out and "卡住" in out
 
 
 def test_gesture_releases_torque_on_ctrl_c_while_holding(monkeypatch):

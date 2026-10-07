@@ -3,7 +3,7 @@
 #   center：一根手指的兩顆回中位並保持扭力（裝舵盤用）。匯流排上只接這兩顆。
 #   finger：一根手指分段開合一次（微調中位用）。匯流排上只接這兩顆。
 #   hand  ：8 顆全接，四根手指輪流開合一次。要能隨手切斷伺服機電源。
-#   gesture：8 顆全接，比一個固定手勢、停住、再張開。目前只有 ok。
+#   gesture：8 顆全接，四指同時動，比一個固定手勢、停住、再張開。目前只有 ok。
 # 用法：bash right_hand/tools/finger_cal.sh center <奇數 ID> <偶數 ID> [中位A 中位B]
 #       bash right_hand/tools/finger_cal.sh finger <奇數 ID> <偶數 ID> [中位A 中位B]
 #       bash right_hand/tools/finger_cal.sh hand [中位1 … 中位8]

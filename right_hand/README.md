@@ -25,7 +25,7 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 
 組裝表進度 75 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
 
-**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid`、`center`、`finger`、`hand` 已在實體伺服機上跑過並完成動作，但那是 bring-up 觀察，沒有 experiment ID；`gesture ok` 在實體上調了四輪，第四組角度下拇指與食指的指尖接觸（依據是一張照片），當天最後一次執行的紀錄結尾是「完成，扭力已關」。`diag` 仍只在假匯流排上測過。
+**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid`、`center`、`finger`、`hand` 已在實體伺服機上跑過並完成動作，但那是 bring-up 觀察，沒有 experiment ID；`gesture ok` 在實體上調了四輪，第四組角度下拇指與食指的指尖接觸（依據是一張照片），當天逐指版本最後一次執行的紀錄結尾是「完成，扭力已關」。之後 `gesture` 改成四指同時動，這個版本還沒在實體上跑過。`diag` 仍只在假匯流排上測過。
 
 ## 目錄
 
@@ -73,7 +73,7 @@ python tools/servo_tool.py setid <PORT> 1 3   # 匯流排上只接一顆時改 I
 python tools/servo_tool.py center <PORT> 1 2  # 一根手指的兩顆回中位並保持扭力（裝舵盤用）
 python tools/servo_tool.py finger <PORT> 1 2 [中位A 中位B]   # 分段開合一次（微調中位用）
 python tools/servo_tool.py hand <PORT> [中位1 … 中位8]      # 8 顆全接，四根手指輪流開合一次
-python tools/servo_tool.py gesture <PORT> ok [中位1 … 中位8] # 比一個固定手勢、停住、再張開
+python tools/servo_tool.py gesture <PORT> ok [中位1 … 中位8] # 比一個固定手勢（四指同時動）、停住、再張開
 ```
 
 組裝檢查表：用瀏覽器開 `docs/assembly_checklist/index.html`。離線開啟時，勾選進度只存在該瀏覽器。
@@ -82,7 +82,7 @@ python tools/servo_tool.py gesture <PORT> ok [中位1 … 中位8] # 比一個�
 
 ```bash
 pip install pytest
-pytest right_hand/tests -q      # 2026-10-07：58 passed
+pytest right_hand/tests -q      # 2026-10-07：62 passed
 ```
 
 ## 安全邊界
@@ -91,7 +91,7 @@ pytest right_hand/tests -q      # 2026-10-07：58 passed
 - `test` 動作前會檢查：匯流排上只有一顆、電壓在 4.0–7.4V、溫度不超過 60°C；任何一項不符就不開扭力。離開前一定關扭力，包含例外與 Ctrl-C。
 - `center`、`finger` 只接受同一根手指的一對 ID（1 2、3 4、5 6、7 8），匯流排上必須恰好是這兩顆，電壓、溫度條件同上；中位修正限 ±30°。`finger` 以較低速度分段開合，任一步 3 秒內沒到位（誤差 8° 以上）就停止並關扭力。
 - `hand` 要求匯流排上恰好是 ID 1–8，一次只動一根手指；任一步沒到位或電壓低於 4.0V 就停止並關全部扭力。
-- `gesture` 只能選檔案裡寫死的手勢（目前只有 `ok`），不接受任意角度；一次動一根手指，停住最多 30 秒就自動收回。它是人工執行的展示指令，不是 skill；AI 要發起手勢必須等 versioned skill 與 Safety Gateway。
+- `gesture` 只能選檔案裡寫死的手勢（目前只有 `ok`），不接受任意角度；四根手指同時動（每一輪每顆只前進一小段，走最遠的那顆每輪 3°），每一輪都檢查位置與電壓，任何一顆落後超過 12° 或電壓低於 4.0V 就全部停止並關扭力；停住最多 30 秒就自動收回。它是人工執行的展示指令，不是 skill；AI 要發起手勢必須等 versioned skill 與 Safety Gateway。
 - 斷電路徑是變壓器。全手測試時變壓器接在有開關、伸手可及的延長線上，由操作者按著。這是人工斷電，不是獨立的 E-stop 電路；交給 skill 與 Safety Gateway 控制之前要補上。
 - 插拔伺服機或線材前先斷電。
 - **USB 黑屏已用 hub 緩解，成因未量測**：變壓器供電時，USB 線頭金屬殼一碰到驅動板 USB 外殼，Mac mini 螢幕就會黑一下（2026-10-04），兩種接線順序都發生過。2026-10-07 使用者改成驅動板經 USB hub 接 Mac mini，螢幕不再受影響。兩個外殼之間的電位差沒有量過，所以變壓器的漏電大小與絕緣狀況仍未知；驅動板一律經 hub 連接，不要直插 Mac mini。
