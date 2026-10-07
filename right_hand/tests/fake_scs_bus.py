@@ -2,7 +2,8 @@
 
 只實作 bring-up 工具用得到的部分：PING、READ、WRITE，以及「EPROM 區在 lock=1
 時寫入不會保存」這件事。它不是伺服機的物理模型：目標位置一寫入就當成已到位，
-除非該顆被設成 `stuck`。
+除非該顆被設成 `stuck`（完全不動）或給了 `travel`（只能走到這個原始值範圍，
+用來模擬機構卡住）。
 """
 import os
 import pty
@@ -21,7 +22,7 @@ ADDR_TEMP = 63
 
 
 class FakeServo:
-    def __init__(self, sid, volt_dv=50, temp_c=31, stuck=False):
+    def __init__(self, sid, volt_dv=50, temp_c=31, stuck=False, travel=None):
         m = bytearray(128)
         m[3], m[4] = 0x05, 0x04             # model number 1284，big-endian
         m[ADDR_ID] = sid
@@ -32,7 +33,9 @@ class FakeServo:
         self.mem = m
         self.saved = bytes(m[:EPROM_END])   # 斷電後會留下來的內容
         self.stuck = stuck
+        self.travel = travel                # (最小原始值, 最大原始值) 或 None
         self.torque_history = []
+        self.goal_history = []              # 寫入過的目標原始值，依時間順序
 
     @property
     def sid(self):
@@ -48,9 +51,13 @@ class FakeServo:
                 self.saved = bytes(saved)
             if a == ADDR_TORQUE:
                 self.torque_history.append(b)
-        if addr == ADDR_GOAL and not self.stuck:
-            self.mem[ADDR_POS] = self.mem[ADDR_GOAL]
-            self.mem[ADDR_POS + 1] = self.mem[ADDR_GOAL + 1]
+        if addr == ADDR_GOAL:
+            goal = (self.mem[ADDR_GOAL] << 8) | self.mem[ADDR_GOAL + 1]
+            self.goal_history.append(goal)
+            if not self.stuck:
+                if self.travel:
+                    goal = max(self.travel[0], min(self.travel[1], goal))
+                self.mem[ADDR_POS], self.mem[ADDR_POS + 1] = goal >> 8, goal & 0xFF
 
     def power_cycle(self):
         self.mem[:EPROM_END] = self.saved
