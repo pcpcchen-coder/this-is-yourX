@@ -25,7 +25,7 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 
 組裝表進度 75 / 75，逐步紀錄見 [`BUILD_LOG.md`](BUILD_LOG.md)。
 
-**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid`、`center`、`finger`、`hand` 已在實體伺服機上跑過並完成動作，但那是 bring-up 觀察，沒有 experiment ID；`gesture ok` 在實體上調了四輪，第四組角度下拇指與食指的指尖接觸（依據是一張照片），當天逐指版本最後一次執行的紀錄結尾是「完成，扭力已關」。之後 `gesture` 改成四指同時動，這個版本的 `slow` 也在實體上跑過一次並正常結束，停下來的位置和逐指版本差 0.6° 以內；`normal`、`fast` 還沒在實體上跑過。`diag` 仍只在假匯流排上測過。
+**本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid`、`center`、`finger`、`hand` 已在實體伺服機上跑過並完成動作，但那是 bring-up 觀察，沒有 experiment ID；`gesture ok` 在實體上調了四輪，第四組角度下拇指與食指的指尖接觸（依據是一張照片），當天逐指版本最後一次執行的紀錄結尾是「完成，扭力已關」。之後 `gesture` 改成四指同時動，這個版本的 `slow` 也在實體上跑過一次並正常結束，停下來的位置和逐指版本差 0.6° 以內；`fast` 也跑過一次（擺出 12 輪、0.5 秒，正常結束）；`normal` 還沒看到實機紀錄。`diag` 仍只在假匯流排上測過。
 
 ## 目錄
 
