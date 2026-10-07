@@ -38,6 +38,7 @@ right_hand/
 ├── docs/
 │   ├── assembly_guide.md           # 組裝順序、Seeed 套件差異、注意事項、來源
 │   ├── arrival_inspection.md       # 到貨清點結果
+│   ├── gesture_calibration.md      # 固定手勢的定案角度與指尖間距對照（OK）
 │   └── assembly_checklist/
 │       ├── index.html              # 75 項可勾選檢查表，瀏覽器直接開
 │       ├── progress.json           # 進度快照
