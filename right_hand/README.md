@@ -94,6 +94,6 @@ pytest right_hand/tests -q      # 2026-10-07：38 passed
 
 1. 手掌組裝、串接 8 顆、全手測試。
 2. （選做）量測 USB 外殼之間的電位差，確認變壓器漏電在正常範圍。
-3. 手掌組裝、全手測試、外殼。
+3. 外殼。
 4. 建立 8-DOF semantic component IDs 與 manifest，把 bring-up 工具收斂成 hardware adapter。
 5. 雙目視覺鏡頭已採購（感光元件 AR0144），用來讓系統看得到這隻右手。模組型號等細節確認後另開資料夾並補 ADR，見 [`docs/HISTORY.md`](../docs/HISTORY.md)。
