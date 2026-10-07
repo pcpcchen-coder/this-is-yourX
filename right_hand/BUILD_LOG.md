@@ -157,6 +157,13 @@
 - **外殼（5.1、5.2）記為完成，依據較弱**：我請使用者裝上軟掌殼與上蓋、拍照、再跑一次 `hand`，使用者回覆「可以 沒問題」。我把它判讀為「外殼已裝好、裝殼後開合正常」。沒有照片，也沒有裝殼後的終端機輸出；如果判讀錯了，這兩項要退回未完成。
 - **組裝表 75 / 75**。右手從到貨到全手可通電開合的過程到此為止。整個過程沒有 experiment ID、硬體 revision 或安全檢查表，所以 repo 裡**沒有任何 real-hardware validation**；所有實機結果都是 bring-up 觀察。
 
+- 使用者要求「讓它比個 OK 再恢復」。新增固定手勢指令 `servo_tool.py gesture PORT NAME [MID_1 … MID_8]`，目前只有 `ok`：
+  - 姿態是寫死在檔案裡的表，角度取自上游 `AmazingHand_Demo.py` 的 `Perfect()`（右手）：食指 (+50, −50)、中指 (0, 0)、無名指 (−20, +20)、拇指 (+65, +12)。指令不接受任意角度。
+  - 流程：四指依序張開 → 中指、無名指、食指、拇指依序擺出（會互相接觸的排最後）→ 停住，按 Enter 或 30 秒後收回 → 反序張開 → 關扭力。
+  - 前置條件與 `hand` 相同（恰好 ID 1–8、電壓、溫度、中位修正 ±30°），另外檢查每顆目標含修正後不超出 ±95°。任一步沒到位就停並關全部扭力。
+  - 這是由人在工作台上執行的展示指令。它不是 skill，也沒有經過 Safety Gateway；之後要把手勢搬到 versioned skill 才能讓 AI 發起。
+  - 測試：`pytest right_hand/tests -q` → 58 passed。`gesture ok` 尚未在實體上執行過；拇指與食指指尖是否如預期輕觸、會不會因提早接觸而被判定卡住，要看第一次實機結果。
+
 ### 待辦（下一次接手從這裡開始）
 
 收尾：
@@ -167,7 +174,9 @@
 
 接下來的工程：
 
+- [ ] `gesture ok` 第一次實機執行的輸出與照片。
 - [ ] 補上獨立的 E-stop，再讓任何 skill 驅動這隻手。
+- [ ] 把手勢從 bring-up 工具搬到 versioned skill（參數 schema、前置條件、限制、timeout、取消、稽核事件、模擬與拒絕測試）。
 - [ ] 把 bring-up 工具收斂成 hardware adapter（含 fake adapter、timestamp／freshness、斷線與 safe-state 測試），建立 8-DOF 的 semantic component IDs 與 manifest。
 - [ ] 雙目相機：跑 probe 腳本確認解析度、FPS、左右眼，再進 ADR-0005 的驗證項目。
 - [ ] （選做）量測 USB 外殼之間的電位差。
