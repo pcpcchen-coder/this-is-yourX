@@ -477,7 +477,7 @@ def test_gesture_ok_opens_poses_in_order_holds_then_returns_in_reverse(monkeypat
     assert all(sv.torque_history == [1, 0] for sv in servos)
     pose = {sv.sid: sv.goal_history[2] for sv in servos}     # [停在原地, 張開, 手勢, 張開]
     assert pose[1] > MID_RAW > pose[2]                        # 食指彎曲
-    assert pose[7] > MID_RAW and pose[8] > MID_RAW            # 拇指兩顆同向：彎曲加側擺
+    assert pose[7] - MID_RAW > 5 * abs(pose[8] - MID_RAW)     # 拇指兩顆不對稱：彎曲加側擺
     assert all(sv.goal_history[-1] == sv.goal_history[1] for sv in servos)   # 最後回到張開
     assert "完成，扭力已關" in capsys.readouterr().out
 
@@ -537,8 +537,8 @@ def test_every_gesture_in_the_table_is_complete_and_within_limits():
         assert sorted(g["order"]) == [1, 3, 5, 7], name      # 四根手指各出現一次
         assert set(g["pose"]) == {1, 3, 5, 7}, name
         for a, b in g["pose"].values():
-            assert abs(a) <= servo_tool.SERVO_LIMIT_DEG - servo_tool.MID_LIMIT_DEG, name
-            assert abs(b) <= servo_tool.SERVO_LIMIT_DEG - servo_tool.MID_LIMIT_DEG, name
+            # 表裡的角度不含中位修正，自己不得超過 ±90°；加上修正後的 ±95° 由執行時檢查
+            assert abs(a) <= 90 and abs(b) <= 90, name
 
 
 def test_wait_enter_with_timeout_reports_whether_enter_was_pressed(monkeypatch):
