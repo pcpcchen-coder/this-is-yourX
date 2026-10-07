@@ -17,9 +17,10 @@
                                              一根手指分段開合一次，用來微調中位
   python servo_tool.py hand   PORT [MID_1 … MID_8]
                                              全手：8 顆都接上，四根手指輪流開合一次
-  python servo_tool.py gesture PORT NAME [MID_1 … MID_8]
+  python servo_tool.py gesture PORT NAME [SPEED] [MID_1 … MID_8]
                                              全手比一個固定手勢、停住、再張開。NAME 目前只有 ok。
-                                             四根手指同時動：每一輪每顆只前進一小段
+                                             四根手指同時動：每一輪每顆只前進一小段。
+                                             SPEED 是 slow（預設）、normal 或 fast
 
 `test` 只用在還沒裝進手指、出力軸沒有負載的伺服機上。
 `center`、`finger` 一次只接一根手指的兩顆：A 是奇數 ID、B 是 A+1。MID 是中位修正，
@@ -68,6 +69,15 @@ HOLD_MAX_S = 30              # 手勢最多停這麼久，沒按 Enter 也會自
 TOGETHER_STEP_DEG = 3.0      # 走最遠的那顆每一輪前進這麼多，其餘按比例
 TOGETHER_PERIOD_S = 0.03     # 每一輪下完指令後等這麼久再讀位置
 TOGETHER_LAG_DEG = 12.0      # 途中任何一顆落後它這一輪的目標超過這個值，就當成卡住
+# 手勢的快慢只能從這張表選。step_deg 是走最遠那顆每一輪的步幅；servo_speed 是伺服機自己的
+# 速度上限（rad/s，1.5 約 86°/s）；lag_deg 是途中容許的落後，取步幅 + 9°。
+# 步幅越大，卡住時在停下來之前被多推的角度也越大，所以沒有比 fast 更快的選項。
+GESTURE_SPEEDS = {
+    "slow":   {"label": "慢", "step_deg": TOGETHER_STEP_DEG, "servo_speed": FINGER_SPEED, "lag_deg": TOGETHER_LAG_DEG},
+    "normal": {"label": "中", "step_deg": 6.0, "servo_speed": 3.0, "lag_deg": 15.0},
+    "fast":   {"label": "快", "step_deg": 10.0, "servo_speed": 4.5, "lag_deg": 19.0},
+}
+GESTURE_SPEED_DEFAULT = "slow"
 GESTURES = {
     # 起點是上游 AmazingHand_Demo.py 的 Perfect()（右手）：食指 (50, -50)、拇指 (65, 12)。
     # 2026-10-07 在這隻手上調了兩輪（一根手指的彎曲 = (奇 - 偶) / 2，側擺 = (奇 + 偶) / 2）：
@@ -320,7 +330,7 @@ def _move_pair(c, a, b, deg_a, deg_b, tolerance):
     return near, now_a, now_b
 
 
-def _move_together(c, plan):
+def _move_together(c, plan, step_deg=TOGETHER_STEP_DEG, lag_deg=TOGETHER_LAG_DEG):
     """多根手指同時走到各自的目標。plan 是 [(奇數 ID, 奇數 ID 角度, 偶數 ID 角度, 標籤), …]。
 
     每一輪依序對每一顆下一小段的目標，然後讀回位置與電壓；有一顆跟不上或電壓過低就
@@ -330,7 +340,8 @@ def _move_together(c, plan):
     for a, deg_a, deg_b, _ in plan:
         goal[a], goal[a + 1] = deg_a, deg_b
     start = {sid: math.degrees(one(c.read_present_position(sid))) for sid in goal}
-    rounds = max(1, math.ceil(max(abs(goal[sid] - start[sid]) for sid in goal) / TOGETHER_STEP_DEG))
+    rounds = max(1, math.ceil(max(abs(goal[sid] - start[sid]) for sid in goal) / step_deg))
+    began = time.monotonic()
     for k in range(1, rounds + 1):
         sub = {sid: start[sid] + (goal[sid] - start[sid]) * k / rounds for sid in goal}
         for sid in goal:
@@ -338,7 +349,7 @@ def _move_together(c, plan):
         time.sleep(TOGETHER_PERIOD_S)
         for sid in goal:
             now = math.degrees(one(c.read_present_position(sid)))
-            if abs(now - sub[sid]) > TOGETHER_LAG_DEG:
+            if abs(now - sub[sid]) > lag_deg:
                 print("  %s ID %d 途中這一輪的目標 %+6.1f° 實際 %+6.1f°   卡住（第 %d／%d 輪）" % (
                     FINGER_NAMES[sid - (sid + 1) % 2], sid, sub[sid], now, k, rounds))
                 return False
@@ -347,6 +358,7 @@ def _move_together(c, plan):
                 print("  同時動作途中 ID %d 電壓掉到 %.1f V，低於 %.1f V，停止（第 %d／%d 輪）。" % (
                     sid, volt, VOLT_MIN, k, rounds))
                 return False
+    print("  （%d 輪，每輪最多 %.0f°，用時 %.1f 秒）" % (rounds, step_deg, time.monotonic() - began))
     return all(_step_to(c, a, a + 1, deg_a, deg_b, label) for a, deg_a, deg_b, label in plan)
 
 
@@ -467,11 +479,15 @@ def cmd_hand(port, mids=None):
     return 0 if ok else 1
 
 
-def cmd_gesture(port, name, mids=None):
+def cmd_gesture(port, name, mids=None, speed=GESTURE_SPEED_DEFAULT):
     """全手比一個固定手勢：全部張開 → 四指同時擺出 → 停住等人 → 四指同時張開 → 關扭力。"""
     g = GESTURES.get(name)
     if g is None:
         print("沒有「%s」這個手勢。可用的：%s" % (name, "、".join(sorted(GESTURES))))
+        return 1
+    sp = GESTURE_SPEEDS.get(speed)
+    if sp is None:
+        print("速度只能是 %s，不給就是 %s。" % ("、".join(GESTURE_SPEEDS), GESTURE_SPEED_DEFAULT))
         return 1
     mids = list(mids) if mids else [0.0] * 8
     if len(mids) != 8 or any(abs(m) > MID_LIMIT_DEG for m in mids):
@@ -488,26 +504,30 @@ def cmd_gesture(port, name, mids=None):
         return 1
     if not _power_ok(c, HAND_IDS):
         return 1
-    wait_enter("要比「%s」。手的周圍淨空，一隻手放在伺服機電源的開關上。按 Enter 開始，Ctrl-C 隨時中止。" % g["label"])
+    wait_enter("要比「%s」，速度：%s（%s）。手的周圍淨空，一隻手放在伺服機電源的開關上。按 Enter 開始，Ctrl-C 隨時中止。"
+               % (g["label"], sp["label"], speed))
     ok = True
+
+    def together(plan):
+        return _move_together(c, plan, sp["step_deg"], sp["lag_deg"])
 
     def opened(fingers):
         return [(a, mids[a - 1] + FINGER_OPEN_DEG, mids[a] - FINGER_OPEN_DEG, FINGER_NAMES[a] + "張開")
                 for a in fingers]
     try:
-        _engage(c, HAND_IDS, FINGER_SPEED)
-        print("== 全部張開（四指同時）")
-        ok = _move_together(c, opened(a for a, _ in FINGER_PAIRS))
+        _engage(c, HAND_IDS, sp["servo_speed"])
+        print("== 全部張開（四指同時，速度：%s）" % sp["label"])
+        ok = together(opened(a for a, _ in FINGER_PAIRS))
         if ok:
             print("== 擺出「%s」（四指同時）" % g["label"])
-            ok = _move_together(c, [(a, targets[a][0], targets[a][1], FINGER_NAMES[a]) for a in g["order"]])
+            ok = together([(a, targets[a][0], targets[a][1], FINGER_NAMES[a]) for a in g["order"]])
         if ok:
             pressed = wait_enter("已比出「%s」。按 Enter 收回；%d 秒內沒按也會自己收回。" % (g["label"], HOLD_MAX_S),
                                  timeout=HOLD_MAX_S)
             if not pressed:
                 print("（%d 秒到，自動收回）" % HOLD_MAX_S)
             print("== 收回（四指同時）")
-            ok = _move_together(c, opened(reversed(g["order"])))
+            ok = together(opened(reversed(g["order"])))
         if not ok:
             print("沒有完成，立刻關扭力。如果卡住的是食指或拇指，多半是指尖比預期早碰到；把這段輸出貼回來調整姿態。")
     finally:
@@ -573,8 +593,10 @@ def main(argv):
             return fn(argv[2], int(argv[3]), int(argv[4]), *mids)
         if cmd == "hand" and len(argv) in (3, 11):
             return cmd_hand(argv[2], [float(x) for x in argv[3:]])
-        if cmd == "gesture" and len(argv) in (4, 12):
-            return cmd_gesture(argv[2], argv[3], [float(x) for x in argv[4:]])
+        if cmd == "gesture" and len(argv) in (4, 5, 12, 13):
+            rest = argv[4:]
+            speed = rest.pop(0) if len(rest) in (1, 9) else GESTURE_SPEED_DEFAULT
+            return cmd_gesture(argv[2], argv[3], [float(x) for x in rest], speed)
     except KeyboardInterrupt:
         print("\n已中止。")
         return 130

@@ -541,6 +541,89 @@ def test_move_together_stops_when_voltage_sags_mid_move(capsys):
     assert "電壓掉到" in capsys.readouterr().out
 
 
+ADDR_SPEED = 46
+
+
+def speed_raw(bus, sid=1):
+    return [(d[0] << 8) | d[1] for i, addr, d in bus.writes if addr == ADDR_SPEED and i == sid]
+
+
+def test_gesture_without_a_speed_runs_the_slow_preset(monkeypatch, capsys):
+    servos, _ = make_hand(monkeypatch)
+    with FakeBus(servos) as bus:
+        assert run("gesture", bus.port, "ok") == 0
+        default_speed = speed_raw(bus)
+    slow_servos, _ = make_hand(monkeypatch)
+    with FakeBus(slow_servos) as bus:
+        assert run("gesture", bus.port, "ok", "slow") == 0
+        assert speed_raw(bus) == default_speed == [293]       # 1.5 rad/s，和調好姿態時用的一樣
+    assert [sv.goal_history for sv in servos] == [sv.goal_history for sv in slow_servos]
+    out = capsys.readouterr().out
+    assert "速度：慢" in out and "40 輪" in out and "用時" in out
+
+
+@pytest.mark.parametrize("speed, step_deg, rounds", [("normal", 6, 20), ("fast", 10, 12)])
+def test_gesture_faster_presets_take_bigger_steps_to_the_same_pose(speed, step_deg, rounds, monkeypatch, capsys):
+    slow_servos, slow_enter = make_hand(monkeypatch)
+    with FakeBus(slow_servos) as bus:
+        assert run("gesture", bus.port, "ok") == 0
+        slow_speed = speed_raw(bus)
+    servos, enter = make_hand(monkeypatch)
+    with FakeBus(servos) as bus:
+        assert run("gesture", bus.port, "ok", speed) == 0
+        assert speed_raw(bus)[0] > slow_speed[0]              # 伺服機自己的速度上限也跟著提高
+    assert enter.positions[1] == slow_enter.positions[1]      # 停住時的姿態和慢速完全一樣
+    assert [sv.goal_history[-1] for sv in servos] == [sv.goal_history[-1] for sv in slow_servos]
+    assert all(sv.torque_history == [1, 0] for sv in servos)
+    for sv in servos:
+        steps = [abs(b - a) for a, b in zip(sv.goal_history, sv.goal_history[1:])]
+        assert max(steps) <= step_deg * 1023 / 300 + 1, sv.sid
+    assert len(servos[6].goal_history) < len(slow_servos[6].goal_history)
+    assert "%d 輪" % rounds in capsys.readouterr().out          # 拇指 120° ÷ 步幅
+
+
+def test_gesture_rejects_an_unknown_speed_without_touching_the_bus(monkeypatch, capsys):
+    servos, enter = make_hand(monkeypatch)
+    with FakeBus(servos) as bus:
+        assert run("gesture", bus.port, "ok", "turbo") == 1
+        assert servo_tool.cmd_gesture(bus.port, "ok", None, 3) == 1
+        assert bus.writes == []
+    assert enter.seen == [] and "slow、normal、fast" in capsys.readouterr().out
+
+
+def test_gesture_accepts_a_speed_together_with_middle_offsets(monkeypatch):
+    servos, enter = make_hand(monkeypatch)
+    with FakeBus(servos) as bus:
+        assert run("gesture", bus.port, "ok", "fast", 5, 0, 0, 0, 0, 0, 0, 0) == 0
+    plain, plain_enter = make_hand(monkeypatch)
+    with FakeBus(plain) as bus:
+        assert run("gesture", bus.port, "ok", "fast") == 0
+    assert enter.positions[1][0] > plain_enter.positions[1][0]    # ID 1 多了 +5° 的中位修正
+    assert enter.positions[1][1:] == plain_enter.positions[1][1:]
+
+
+def test_gesture_fast_still_stops_every_finger_when_the_thumb_binds(monkeypatch, capsys):
+    servos = [FakeServo(i, travel=(300, 600) if i == 7 else None) for i in range(1, 9)]
+    _, enter = make_hand(monkeypatch, servos)
+    with FakeBus(servos) as bus:
+        assert run("gesture", bus.port, "ok", "fast") == 1
+    assert len(enter.seen) == 1 and all(sv.torque_history[-1] == 0 for sv in servos)
+    lag_raw = servo_tool.GESTURE_SPEEDS["fast"]["lag_deg"] * 1023 / 300
+    assert max(servos[6].goal_history) - 600 <= lag_raw + 10 * 1023 / 300 + 1   # 最多多推一個步幅
+    assert max(servos[0].goal_history) < MID_RAW + 74 * 1023 / 300 - 50
+    assert "拇指 ID 7" in capsys.readouterr().out
+
+
+def test_gesture_speed_table_is_bounded_and_ordered():
+    presets = [servo_tool.GESTURE_SPEEDS[k] for k in ("slow", "normal", "fast")]
+    assert len(servo_tool.GESTURE_SPEEDS) == 3 and servo_tool.GESTURE_SPEED_DEFAULT == "slow"
+    for slower, faster in zip(presets, presets[1:]):
+        assert slower["step_deg"] < faster["step_deg"] and slower["servo_speed"] < faster["servo_speed"]
+    for sp in presets:
+        assert 0 < sp["step_deg"] <= 10 and sp["servo_speed"] <= 4.5      # 沒有比 fast 更快的
+        assert sp["step_deg"] < sp["lag_deg"] <= sp["step_deg"] + 9       # 卡住時最多被推這麼多就停
+
+
 def test_gesture_returns_by_itself_when_nobody_presses_enter(monkeypatch, capsys):
     servos, enter = make_hand(monkeypatch)
     enter.pressed = False
