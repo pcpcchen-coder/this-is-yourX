@@ -94,6 +94,6 @@ pytest right_hand/tests -q      # 2026-10-07：38 passed
 
 1. 手掌組裝、串接 8 顆、全手測試。
 2. （選做）量測 USB 外殼之間的電位差，確認變壓器漏電在正常範圍。
-3. 手掌組裝、全手測試、外殼。
+3. 外殼。
 4. 建立 8-DOF semantic component IDs 與 manifest，把 bring-up 工具收斂成 hardware adapter。
 5. 用雙目相機看這隻右手：相機是 Waveshare AR0144 Stereo USB Camera (A)，資料在 [`stereo_camera/`](../stereo_camera/README.md)，決策見 [ADR-0005](../docs/adr/0005-stereo-camera-ar0144.md)。
