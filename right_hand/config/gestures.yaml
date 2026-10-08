@@ -1,0 +1,17 @@
+# 對 AI 開放的手勢表。AI 只看得到名稱、標籤與說明，看不到也改不了角度。
+# pose 的 key 是每根手指的奇數 ID：1 食指、3 中指、5 無名指、7 拇指；值是 (奇數 ID 角度, 偶數 ID 角度)，
+# 單位度，不含中位修正。新增或修改手勢的流程見 right_hand/docs/hand_api_design.md §5。
+# status：confirmed 才能被執行；draft、needs_recheck 一律拒絕。
+gestures:
+  ok:
+    label: OK
+    description: 拇指與食指指尖相觸成圈，中指與無名指伸直
+    status: confirmed
+    calibration_revision: "2026-10-07.r1"
+    evidence: right_hand/docs/gesture_calibration.md（2026-10-07，bring-up 觀察，非 real-hardware validation）
+    order: [3, 5, 1, 7]
+    pose:
+      1: [74, -74]
+      3: [0, 0]
+      5: [-20, 20]
+      7: [90, -13]

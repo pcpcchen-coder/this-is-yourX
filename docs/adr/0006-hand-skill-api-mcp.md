@@ -1,6 +1,6 @@
 # ADR-0006: 右手對 AI 的介面採「skill gateway 常駐程式 + MCP 介面卡」
 
-- Status: proposed
+- Status: accepted（2026-10-08 George 決定：授權採逐次核准；先做到 P2 模擬可動）
 - Date: 2026-10-08
 - Owners: George / project maintainers
 
@@ -26,14 +26,18 @@ Amazing Hand 右手已組裝、校正完成，`right_hand/tools/servo_tool.py` �
 1. **Hardware adapter**：唯一接觸序列埠的模組。真實版用 rustypot 驅動 SCS0009，假版不需要硬體；兩者實作同一個介面，狀態帶 timestamp、quality、freshness，斷線時進 safe state。
 2. **Skill gateway 常駐程式（`handd`）**：獨占 adapter。載入 manifest、登記 skill、依 [01 §2.D](../01_SYSTEM_ARCHITECTURE.md) 的七項檢查決定接受或拒絕、執行、寫稽核事件。全部是確定性程式，不含任何模型。
 3. **MCP 介面卡**：一支 stdio MCP server，只會透過本機 socket 和 `handd` 說話，沒有序列埠權限。它把 [09 §3](../09_AI_AGENT_INTEGRATION.md) 的 tool（`self_list_components`、`self_get_component`、`skill_propose`、`skill_execute` 等）暴露給 AI。它當掉或被關掉，不影響 `handd` 與手的安全狀態。
-4. **操作者通道**：本機 CLI（`hand status | arm | disarm | stop | approve | log`）。授權只能從這裡產生，不經過 MCP。
+4. **操作者通道**：本機 CLI（`hand status | pending | approve | stop | clear-fault | log`）。核准只能從這裡產生，不經過 MCP。
 
 第一版對 AI 開放的動作只有從**已校正的手勢表**選名字、選速度檔、選停留秒數。AI 不能給角度。
 
 授權採兩層：
 
 - **實體層（權威）**：伺服機 5 V 電源上的開關／E-stop。斷電時，不管軟體是什麼狀態，手都不會動。
-- **軟體層**：操作者在本機用 `hand arm` 開一個有期限的 session，指定這段時間 AI 可以用哪些 skill、最高速度檔。沒有有效 session 時，所有動作請求都被拒絕（預設 A0）。
+- **軟體層：逐次核准（A2）**。AI 每次要動，都先 `skill_propose`；操作者在本機看過內容後 `hand approve <proposal_id>`，AI 才能 `skill_execute`。核准綁定這一筆提議的參數雜湊、60 秒內有效、只能用一次。沒有核准的動作請求一律拒絕（預設 A0）。
+
+2026-10-08 的決定：George 選了逐次核准，不採原本建議的「有期限 session」（A3）。之後若要改成 session，另開 ADR 或修訂本 ADR。
+
+分期：先做 P1（只讀）與 P2（skill、核准、稽核全部在假 adapter 上跑，A1）。P2 階段 gateway 對真 adapter 一律拒絕執行動作（`REAL_MOTION_NOT_ENABLED`），要到 P3 條件滿足才打開。
 
 細節（tool schema、skill 契約、元件 ID、流程、測試清單、分期）在 [`right_hand/docs/hand_api_design.md`](../../right_hand/docs/hand_api_design.md)。
 
@@ -63,24 +67,24 @@ Amazing Hand 右手已組裝、校正完成，`right_hand/tools/servo_tool.py` �
 
 - **讓 AI 直接跑 `servo_tool.py`**：最快，但等於模型直接下動作命令，沒有授權層，違反規則。不採用。
 - **MCP server 自己開序列埠**：少一個程式，但 AI 介面卡就落在驅動路徑上，它當掉時扭力狀態沒人管，也無法讓操作者通道和 AI 通道分開。不採用。
-- **每個動作都要人按核准（A2）**：最保守，但對話中比手勢會變成每次都要走到鍵盤前。保留給之後有自由參數的 skill；固定手勢表改用有期限的 session 授權（A3）。
+- **有期限的 session 授權（A3）**：操作者開一段時間，期間 AI 可以自行執行已校正手勢，對話比較順。原本是建議方案；George 選了更保守的逐次核准（A2）。
 - **HTTP facade（[04 §6](../04_DATA_MODEL_AND_APIS.md)）先做**：之後可以加，契約相同。第一版只做本機 socket，不開網路埠。
 
 ## Consequences
 
-- 要新增 manifest（8-DOF 的 semantic component ID）、adapter（真／假）、gateway、MCP 介面卡、操作者 CLI，以及各自的測試。依 AGENTS.md，manifest 用到的新欄位要同步改 schema、範例、驗證測試與 migration notes。
+- 要新增 manifest（8-DOF 的 semantic component ID）、adapter（真／假）、gateway、MCP 介面卡、操作者 CLI，以及各自的測試。2026-10-08 實作 P1／P2 時，manifest 只用到 schema 0.1.0 既有的欄位（手勢表與校正值放在獨立的設定檔），所以沒有改 schema，也不需要 migration notes。
 - `servo_tool.py` 裡已在實機跑過的同時移動、落後檢查、電壓檢查會搬進 adapter 與 skill；bring-up 工具保留給校正用。
 - 第一版 AI 能做的事很有限：已校正的手勢（目前只有 `ok`）、張開、停止、查狀態。要增加手勢，得先由人在工作台上校正並登記。
 - 需要一顆實體 E-stop（或至少一個固定在桌上的電源開關）才能進到實機階段。目前的延長線開關不依賴 LLM 或網路，但不符合 [07 §10](../07_SAFETY_SECURITY_PRIVACY.md)「E-stop 實測能切 motor power，且狀態可回讀」的啟動前檢查。
 - 已知弱點，設計上不假裝解決：
   - SCS0009 這條路徑上沒有 MCU watchdog。主機或 `handd` 當掉時，伺服機會停在最後的目標並保持扭力，不會亂動，但也不會自己放鬆。緩解是 `handd` 啟動時一律先關 8 顆扭力、由系統服務自動重啟，以及實體斷電。
   - 沒有電流或負載回授，手指被擋住只能從位置落後間接判斷。所以不做抓握。
-  - 在單一使用者的 Mac 上，如果 AI 工具本身有那台機器的 shell（例如在同一台跑 coding agent），軟體層的 session 授權擋不住它自己去執行 `hand arm`。這種情況下真正的邊界只有實體電源開關。設計文件列了加固選項。
+  - 在單一使用者的 Mac 上，如果 AI 工具本身有那台機器的 shell（例如在同一台跑 coding agent），軟體層的核准擋不住它自己去執行 `hand approve`。這種情況下真正的邊界只有實體電源開關。設計文件列了加固選項。
 - 稽核紀錄可能包含對話脈絡的摘要（提議理由）。只存本機，不上傳。
 
 ## Validation
 
-- 整套在假 adapter 上跑過 [09 §9](../09_AI_AGENT_INTEGRATION.md) 的評估集，外加本設計的拒絕案例：未授權、授權過期、狀態過期、電源軌無回應、未校正的手勢、執行中再請求、偽造的 proposal、tool 參數夾帶角度。指標是 false action = 0。
+- 整套在假 adapter 上跑過 [09 §9](../09_AI_AGENT_INTEGRATION.md) 的評估集，外加本設計的拒絕案例：未核准、核准過期、核准重複使用、狀態過期、電源軌無回應、未校正的手勢、執行中再請求、偽造的 proposal、tool 參數夾帶角度。指標是 false action = 0。
 - 假 adapter 與真 adapter 通過同一組契約測試。
 - 故障注入：執行中拔 USB、執行中切伺服機電源、執行中殺掉 MCP 介面卡、執行中殺掉 `handd`、手指被擋住。每一種都要在限定時間內到達文件寫明的狀態，且重啟後不自動續做。
 - 實機階段要有 experiment ID、硬體版本與 [07 §10](../07_SAFETY_SECURITY_PRIVACY.md) 的檢查表，才能寫成 real-hardware validation。

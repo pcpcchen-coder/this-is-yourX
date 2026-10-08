@@ -4,7 +4,7 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 
 這個資料夾只管右手。其他 X 各自開資料夾，例如雙目相機在 [`stereo_camera/`](../stereo_camera/README.md)。
 
-## 目前狀態（2026-10-07）
+## 目前狀態（2026-10-08）
 
 硬體已到貨。8 顆伺服機都通過單軸小幅轉動測試並設好 ID 1–8。四指已校正並裝上手掌，全手可通電輪流開合，組裝表全部完成。USB 黑屏問題以中間加 USB hub 緩解，成因尚未量測（見安全邊界）。
 
@@ -27,6 +27,8 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 
 **本資料夾目前沒有任何 real-hardware validation。** `servo_tool.py` 的 `scan`、`test`、`setid`、`center`、`finger`、`hand` 已在實體伺服機上跑過並完成動作，但那是 bring-up 觀察，沒有 experiment ID；`gesture ok` 在實體上調了四輪，第四組角度下拇指與食指的指尖接觸（依據是一張照片），當天逐指版本最後一次執行的紀錄結尾是「完成，扭力已關」。之後 `gesture` 改成四指同時動，這個版本的 `slow` 也在實體上跑過一次並正常結束，停下來的位置和逐指版本差 0.6° 以內；`fast` 也跑過一次（擺出 12 輪、0.5 秒，正常結束）；`normal` 還沒看到實機紀錄。`diag` 仍只在假匯流排上測過。
 
+**AI 介面（ADR-0006）**：P1（只讀）與 P2（模擬上的提議、逐次核准、執行）已實作並在開發機上測過，還沒在 Mac mini 上跑過。接實體伺服機時只能讀狀態，動作一律拒絕。見 [`docs/hand_api_design.md`](docs/hand_api_design.md)。
+
 ## 目錄
 
 ```text
@@ -34,12 +36,14 @@ right_hand/
 ├── README.md
 ├── BUILD_LOG.md                    # 日期化建置紀錄
 ├── requirements.txt
+├── config/                         # body manifest、校正值、手勢表（ADR-0006）
+├── hand_api/                       # AI 介面：adapter、gateway、handd、hand 指令、MCP server
 ├── THIRD_PARTY_NOTICES.md          # 官方手冊圖片的來源與授權
 ├── docs/
 │   ├── assembly_guide.md           # 組裝順序、Seeed 套件差異、注意事項、來源
 │   ├── arrival_inspection.md       # 到貨清點結果
 │   ├── gesture_calibration.md      # 固定手勢的定案角度與指尖間距對照（OK）
-│   ├── hand_api_design.md          # 給 AI 用的介面設計草案（ADR-0006，尚未實作）
+│   ├── hand_api_design.md          # AI 介面的設計、核准流程、安裝與接上 AI 工具
 │   └── assembly_checklist/
 │       ├── index.html              # 75 項可勾選檢查表，瀏覽器直接開
 │       ├── progress.json           # 進度快照
@@ -49,10 +53,14 @@ right_hand/
 │   ├── servo_tool.py               # 人工操作的 bring-up 工具（單顆測試、設 ID、單指校正）
 │   ├── first_scan.sh               # 第一次上電：建環境、找埠、掃描（只讀）
 │   ├── assign_id.sh                # 單顆：掃描 → 轉動測試 → 改 ID → 再掃描
-│   └── finger_cal.sh               # 單指校正（center、finger）、全手測試（hand）、固定手勢（gesture）
+│   ├── finger_cal.sh               # 單指校正（center、finger）、全手測試（hand）、固定手勢（gesture）
+│   ├── handd.sh                    # 啟動 handd（預設模擬；--adapter scs 接實體只讀）
+│   ├── hand.sh                     # 操作者指令：status、pending、approve、stop、clear-fault、log
+│   └── hand_mcp.py                 # MCP stdio server 進入點（登記到 AI 工具用）
 └── tests/
     ├── fake_scs_bus.py             # 假的 SCS 匯流排
-    └── test_servo_tool.py
+    ├── test_servo_tool.py
+    └── test_hand_api.py
 ```
 
 ## 快速開始
@@ -83,7 +91,7 @@ python tools/servo_tool.py gesture <PORT> ok [slow|normal|fast] [中位1 … 中
 
 ```bash
 pip install pytest
-pytest right_hand/tests -q      # 2026-10-07：69 passed
+pytest right_hand/tests -q      # 2026-10-08：148 passed
 ```
 
 ## 安全邊界
@@ -92,7 +100,8 @@ pytest right_hand/tests -q      # 2026-10-07：69 passed
 - `test` 動作前會檢查：匯流排上只有一顆、電壓在 4.0–7.4V、溫度不超過 60°C；任何一項不符就不開扭力。離開前一定關扭力，包含例外與 Ctrl-C。
 - `center`、`finger` 只接受同一根手指的一對 ID（1 2、3 4、5 6、7 8），匯流排上必須恰好是這兩顆，電壓、溫度條件同上；中位修正限 ±30°。`finger` 以較低速度分段開合，任一步 3 秒內沒到位（誤差 8° 以上）就停止並關扭力。
 - `hand` 要求匯流排上恰好是 ID 1–8，一次只動一根手指；任一步沒到位或電壓低於 4.0V 就停止並關全部扭力。
-- `gesture` 只能選檔案裡寫死的手勢（目前只有 `ok`），不接受任意角度；四根手指同時動（每一輪每顆只前進一小段），每一輪都檢查位置與電壓，任何一顆落後太多或電壓低於 4.0V 就全部停止並關扭力；快慢只能選 `slow`（預設，每輪 3°、落後上限 12°）、`normal`（6°、15°）、`fast`（10°、19°），不接受任意數值，越快則卡住時在停下來前被多推的角度越大；停住最多 30 秒就自動收回。它是人工執行的展示指令，不是 skill；AI 要發起手勢必須等 versioned skill 與 Safety Gateway。
+- `gesture` 只能選檔案裡寫死的手勢（目前只有 `ok`），不接受任意角度；四根手指同時動（每一輪每顆只前進一小段），每一輪都檢查位置與電壓，任何一顆落後太多或電壓低於 4.0V 就全部停止並關扭力；快慢只能選 `slow`（預設，每輪 3°、落後上限 12°）、`normal`（6°、15°）、`fast`（10°、19°），不接受任意數值，越快則卡住時在停下來前被多推的角度越大；停住最多 30 秒就自動收回。它是人工執行的展示指令，不是 skill；AI 發起的手勢走 `hand_api`（見下一條）。
+- AI 只能透過 `hand_api` 的 MCP tool 提議已校正的手勢；每個動作都要操作者在本機 `hand approve`，核准 60 秒內有效、只能用一次。P2 階段對實體伺服機一律拒絕動作。`handd` 與 `servo_tool.py` 共用匯流排鎖，不會同時開同一條匯流排。
 - 斷電路徑是變壓器。全手測試時變壓器接在有開關、伸手可及的延長線上，由操作者按著。這是人工斷電，不是獨立的 E-stop 電路；交給 skill 與 Safety Gateway 控制之前要補上。
 - 插拔伺服機或線材前先斷電。
 - **USB 黑屏已用 hub 緩解，成因未量測**：變壓器供電時，USB 線頭金屬殼一碰到驅動板 USB 外殼，Mac mini 螢幕就會黑一下（2026-10-04），兩種接線順序都發生過。2026-10-07 使用者改成驅動板經 USB hub 接 Mac mini，螢幕不再受影響。兩個外殼之間的電位差沒有量過，所以變壓器的漏電大小與絕緣狀況仍未知；驅動板一律經 hub 連接，不要直插 Mac mini。
@@ -101,6 +110,6 @@ pytest right_hand/tests -q      # 2026-10-07：69 passed
 
 1. 補拍裝殼後的照片並留一份裝殼後的 `hand` 輸出。
 2. （選做）量測 USB 外殼之間的電位差，確認變壓器漏電在正常範圍。
-3. 補上獨立的 E-stop。
-4. 建立 8-DOF semantic component IDs 與 manifest，把 bring-up 工具收斂成 hardware adapter。
+3. 在 Mac mini 上跑 AI 介面 P1／P2（安裝步驟見 `docs/hand_api_design.md` §9），並把 MCP server 登記到 AI 工具。
+4. 補上固定的實體開關／E-stop，再依 ADR-0006 P3 的條件開放實機動作。
 5. 用雙目相機看這隻右手：相機是 Waveshare AR0144 Stereo USB Camera (A)，資料在 [`stereo_camera/`](../stereo_camera/README.md)，決策見 [ADR-0005](../docs/adr/0005-stereo-camera-ar0144.md)。
