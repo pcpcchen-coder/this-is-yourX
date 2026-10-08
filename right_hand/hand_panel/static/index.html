@@ -17,12 +17,11 @@
 </header>
 
 <main>
-  <section id="notice" class="notice" hidden aria-live="assertive"></section>
-
-  <section class="power" aria-labelledby="power-h">
-    <div class="power-text">
+  <section class="power" id="power" aria-labelledby="power-h">
+    <div class="power-head">
       <h2 id="power-h">扭力</h2>
-      <p id="power-state">讀取中…</p>
+      <span id="power-badge" class="badge">讀取中</span>
+      <span id="power-timer" class="timer"></span>
     </div>
     <div class="power-ctl">
       <fieldset class="speed" id="speed">
@@ -31,8 +30,9 @@
         <label><input type="radio" name="speed" value="normal"><span>中</span></label>
         <label><input type="radio" name="speed" value="fast"><span>快</span></label>
       </fieldset>
-      <button id="enable" class="go" type="button" disabled>啟用扭力</button>
+      <button id="enable" class="go main" type="button" disabled>啟用扭力</button>
     </div>
+    <p id="power-state" class="power-detail" aria-live="polite">讀取中…</p>
   </section>
 
   <div class="cols">
@@ -53,7 +53,7 @@
                placeholder="例：pinch_small" autocapitalize="off" spellcheck="false"></label>
         <label>標籤<input id="pose-label" name="label" maxlength="40" placeholder="例：捏小東西"></label>
         <button id="save-btn" class="go" type="submit">存下目前姿勢</button>
-        <p id="save-hint" class="hint"></p>
+        <p class="hint">扭力開著時存下目標角度；關著時存下讀到的位置。</p>
       </form>
       <p id="poses-error" class="notice" hidden></p>
       <ul id="pose-list" class="pose-list"></ul>

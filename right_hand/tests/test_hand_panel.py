@@ -1220,6 +1220,20 @@ def test_the_page_has_no_inline_script_or_style_that_the_policy_would_block():
     assert "innerHTML" not in js and "eval(" not in js
 
 
+def test_the_torque_area_has_fixed_slots_so_status_changes_do_not_move_the_page():
+    """狀態、倒數、說明各有自己的位置；不能再有一塊會臨時插進頁面最上面的說明。"""
+    static = os.path.join(RIGHT_HAND, "hand_panel", "static")
+    html = open(os.path.join(static, "index.html"), encoding="utf-8").read()
+    css = open(os.path.join(static, "app.css"), encoding="utf-8").read()
+    for slot in ('id="power-badge"', 'id="power-timer"', 'id="power-state"'):
+        assert html.count(slot) == 1
+    assert 'id="notice"' not in html
+    import re
+    detail = re.search(r"\.power-detail \{([^}]*)\}", css).group(1)
+    assert "height:" in detail and "overflow: hidden" in detail
+    assert re.search(r"\.main \{[^}]*width:", css) and re.search(r"\.badge \{[^}]*min-width:", css)
+
+
 def test_http_malformed_posts_are_refused_and_move_nothing(web):
     web.post("/api/enable")
     before = writes(web.fake)

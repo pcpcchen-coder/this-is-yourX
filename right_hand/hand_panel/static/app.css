@@ -18,7 +18,7 @@
   background: var(--mat);
 }
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; scrollbar-gutter: stable; }
 body { margin: 0; line-height: 1.5; padding-bottom: 6.5rem; }
 h1, h2, h3, p { margin: 0; }
 h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: .02em; }
@@ -36,7 +36,12 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: .6rem 1rem; background: var(--ink); color: #eef3f1;
 }
-.rig { font-size: .85rem; color: #b9c9c5; }
+.bar-id { min-width: 0; flex: 1 1 auto; }
+/* 頂列的狀態字固定兩行高：字數變了也不會把整頁往下推 */
+.rig {
+  font-size: .85rem; line-height: 1.3; height: 2.6em; color: #b9c9c5; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
 .stop {
   position: fixed; left: .75rem; right: .75rem; bottom: calc(.75rem + env(safe-area-inset-bottom));
   z-index: 10; min-height: 4.5rem; border: 0; border-radius: .9rem;
@@ -58,14 +63,40 @@ main > section, .cols > section, .more { background: var(--panel); border: 1px s
 .notice.info { border-color: var(--line); background: var(--panel); border-width: 1px; }
 .notice.info h2 { color: var(--ink); }
 
-/* ---------- 扭力 ---------- */
-.power { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }
-.power-text { flex: 1 1 18rem; }
-.power-text p { color: var(--soft); max-width: 44ch; }
+/* ---------- 扭力 ----------
+   這一區每個位置的大小都是固定的：狀態、倒數、說明換字時只換字與顏色，下面的手指區不會跟著上下移動。 */
+.power {
+  display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "ctl" "detail";
+  align-items: center; gap: .6rem 1rem;
+}
+.power-head { grid-area: head; display: flex; align-items: center; gap: .5rem .75rem; flex-wrap: wrap; min-width: 0; }
+.badge {
+  display: inline-block; min-width: 10.5rem; padding: .15rem .7rem; text-align: center; white-space: nowrap;
+  border: 1px solid var(--line); border-radius: 1rem; background: #fff; font-weight: 700;
+}
+.timer { min-width: 9.5rem; min-height: 1.5em; color: var(--soft); font-size: .9rem; white-space: nowrap; }
+.power-ctl { grid-area: ctl; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; }
+.power-detail {
+  grid-area: detail; color: var(--soft); height: 4.5em; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+}
+/* 說明被截斷時（很長的故障訊息），點一下展開；這是使用者自己觸發的，不算畫面亂跳。 */
+.power-detail.open { height: auto; min-height: 4.5em; display: block; }
 .power.on { border-color: var(--go); box-shadow: inset .35rem 0 0 var(--go); }
-.power-ctl { display: flex; align-items: flex-end; gap: 1rem; flex-wrap: wrap; }
+.power.on .badge { background: var(--go); border-color: var(--go); color: #fff; }
+.power.on.other .badge { background: #fff; color: var(--go); }
+.power.fault { border-color: var(--stop); box-shadow: inset .35rem 0 0 var(--stop); }
+.power.fault .badge { background: var(--stop); border-color: var(--stop); color: #fff; }
+.power.fault .power-detail { color: var(--ink); }
+.power.offline .badge { border-color: var(--stop); color: var(--stop); }
+.main { flex: 0 0 auto; width: 9.5rem; padding-left: .4rem; padding-right: .4rem; white-space: nowrap; }
+@media (min-width: 62rem) {
+  .power { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "head ctl" "detail detail"; }
+  .power-detail { height: 3em; -webkit-line-clamp: 2; }
+  .power-detail.open { min-height: 3em; }
+}
 .speed { border: 0; padding: 0; margin: 0; display: flex; align-items: center; gap: .5rem; }
-.speed legend { float: left; padding: 0 .5rem 0 0; font-size: .9rem; color: var(--soft); }
+.speed legend { float: left; padding: 0 .5rem 0 0; font-size: .9rem; color: var(--soft); white-space: nowrap; }
 .speed label { position: relative; }
 .speed input { position: absolute; opacity: 0; inset: 0; }
 .speed span {
@@ -146,7 +177,7 @@ main > section, .cols > section, .more { background: var(--panel); border: 1px s
 .pose-angles dd { margin: 0; }
 .pose-why { font-size: .85rem; color: var(--stop); }
 .pose-act { display: flex; gap: .5rem; flex-wrap: wrap; }
-.pose-act .go, .pose-act .quiet { min-height: 2.5rem; padding: .3rem .9rem; }
+.pose-act .go, .pose-act .quiet { min-height: 2.5rem; min-width: 6.5rem; padding: .3rem .9rem; white-space: nowrap; }
 .empty { color: var(--soft); border-top: 1px solid var(--line); padding-top: .75rem; }
 
 /* ---------- 讀值與紀錄 ---------- */
@@ -178,6 +209,9 @@ main > section, .cols > section, .more { background: var(--panel); border: 1px s
   main > section, .cols > section, .more { padding: .75rem; }
   .tick b { display: none; }
   :root { --finger-w: 2.6rem; }
+  .power-ctl { gap: .5rem; }
+  .speed span { min-width: 2.5rem; }
+  .main { width: 8.5rem; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .handle { transition: transform .12s; }

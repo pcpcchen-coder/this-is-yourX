@@ -12,8 +12,8 @@
   const POLL_MS = 250;
   const SEND_MS = 120;
   const RELEASE_TEXT = {
-    watchdog: "控制的頁面太久沒有回報，面板已自動關扭力。",
-    hold_timeout: "閒置太久，面板已自動關扭力。要繼續就再啟用一次。",
+    watchdog: "控制的頁面太久沒有回報，面板已自動關扭力。再啟用一次就能繼續。",
+    hold_timeout: "閒置太久，面板已自動關扭力。再啟用一次就能繼續。",
     enable_timeout: "啟用扭力花太久，面板已關扭力。",
   };
 
@@ -69,12 +69,32 @@
     return true;
   }
 
+  // 只在字真的不同時才寫進去，畫面不會無謂地重排。
+  function put(node, text) {
+    if (node.textContent !== text) node.textContent = text;
+  }
+
+  // 一個值要連續出現 polls 次才換上去，偶發的一次讀值失敗不會讓畫面閃一下。
+  const steady = {};
+  function settle(name, value, polls) {
+    const s = steady[name] || (steady[name] = { shown: value, next: value, n: 0 });
+    if (value === s.shown) { s.n = 0; s.next = value; return s.shown; }
+    if (value === s.next) s.n += 1; else { s.next = value; s.n = 1; }
+    if (s.n >= polls) { s.shown = value; s.n = 0; }
+    return s.shown;
+  }
+
+  function unconfirm(btn) {
+    if (!btn.classList.contains("confirm")) return;
+    clearTimeout(btn._timer);
+    btn.classList.remove("confirm");
+    btn.textContent = btn.dataset.label;
+  }
+
   // 第一次按只換文字，幾秒內再按一次才算數。
   function confirmed(btn, text) {
     if (btn.classList.contains("confirm")) {
-      clearTimeout(btn._timer);
-      btn.classList.remove("confirm");
-      btn.textContent = btn.dataset.label;
+      unconfirm(btn);
       return true;
     }
     btn.dataset.label = btn.textContent;
@@ -239,65 +259,87 @@
   }
 
   // ------------------------------------------------------------------ 畫面
-  function rigText() {
+  function rigInfo() {
     const kind = st.simulated ? "模擬" : "實機";
-    if (st.bus.state === "unavailable") return kind + "：" + (st.bus.detail || "拿不到匯流排");
-    if (st.bus.state !== "attached" || st.reading_age_ms === null) return kind + "：連線中…";
+    if (st.bus.state === "unavailable") {
+      const why = st.bus.detail || "拿不到匯流排";
+      return { kind: "unavailable:" + why, text: kind + "：" + why };
+    }
+    if (st.bus.state !== "attached" || st.reading_age_ms === null) return { kind: "connecting", text: kind + "：連線中…" };
     const ok = st.servos.filter((s) => s.ok);
-    if (!ok.length) return kind + "：8 顆都沒有回應。伺服機電源關著，或線沒接好。";
-    if (ok.length < 8) return kind + "：ID " + st.servos.filter((s) => !s.ok).map((s) => s.id).join("、") + " 沒有回應。";
+    if (!ok.length) return { kind: "none", text: kind + "：8 顆都沒有回應。伺服機電源關著，或線沒接好。" };
+    if (ok.length < 8) {
+      const ids = st.servos.filter((s) => !s.ok).map((s) => s.id).join("、");
+      return { kind: "missing:" + ids, text: kind + "：ID " + ids + " 沒有回應。" };
+    }
     const volts = ok.map((s) => s.voltage_v);
     const temp = Math.max(...ok.map((s) => s.temperature_c));
     const lo = Math.min(...volts).toFixed(1), hi = Math.max(...volts).toFixed(1);
-    return kind + "：8 顆都有回應，" + (lo === hi ? lo : lo + "–" + hi) + " V，最高 " + temp.toFixed(0) + " °C";
+    return { kind: "ok", text: kind + "：8 顆都有回應，" + (lo === hi ? lo : lo + "–" + hi) + " V，最高 " + temp.toFixed(0) + " °C" };
+  }
+
+  // 頂列：狀態的種類穩定了才換字；電壓、溫度的數字最多 2 秒換一次。
+  let rigShown = { kind: null, at: 0 };
+  function showRig() {
+    const r = rigInfo();
+    if (settle("rig", r.kind, 3) !== r.kind) return;
+    const now = performance.now();
+    if (r.kind === rigShown.kind && now - rigShown.at < 2000) return;
+    rigShown = { kind: r.kind, at: now };
+    put($("#rig"), r.text);
   }
 
   function render() {
     if (!Object.keys(sliders).length) buildFingers(st.limits);
-    $("#rig").textContent = rigText();
-    const ready = st.bus.state === "attached" && st.servos.every((s) => s.ok);
+    showRig();
+    const ready = settle("ready", st.bus.state === "attached" && st.servos.every((s) => s.ok), 3);
     const mine = inControl();
 
-    // 故障與自動關扭力的說明
-    const notice = $("#notice");
-    const key = st.fault ? "fault:" + st.fault.at : (!st.torque_on && st.last_release && RELEASE_TEXT[st.last_release.reason]
-      ? "rel:" + st.last_release.at : "");
-    if (notice.dataset.key !== key) {
-      notice.dataset.key = key;
-      notice.replaceChildren();
-      notice.hidden = !key;
-      notice.classList.toggle("info", !st.fault);
-      if (st.fault) {
-        notice.append(el("h2", "", "已停止並鎖住"));
-        const p = notice.appendChild(el("p"));
-        p.append(el("code", "", st.fault.reason_code), "　" + st.fault.detail);
-        notice.append(el("p", "", "面板已送出關扭力。先看手的狀況、排除原因；不確定伺服機有沒有還在出力時，切斷伺服機電源。"));
-        const b = notice.appendChild(el("button", "quiet", "解除鎖定"));
-        b.type = "button";
-        b.addEventListener("click", async () => { failed(await post("/api/clear_fault")); });
-      } else if (key) {
-        notice.append(el("p", "", RELEASE_TEXT[st.last_release.reason]));
-      }
-    }
-
-    // 扭力
-    const power = $(".power");
-    power.classList.toggle("on", st.torque_on);
-    let text;
-    if (st.fault) text = "已鎖住。先處理上面的故障，再解除鎖定。";
-    else if (mine && st.moving) text = "扭力開著，手指移動中。";
-    else if (mine) text = "扭力開著，由這一頁控制。再 " + Math.ceil(st.hold_remaining_s || 0) + " 秒沒有新動作就自動關扭力。";
-    else if (st.torque_on) text = "扭力開著，由另一個頁面控制。這一頁只能看，以及按停止。";
-    else if (!ready) text = "扭力關著。8 顆伺服機都有回應之後才能啟用。";
-    else text = "扭力關著，手指是鬆的。啟用後，滑桿從手指現在的位置開始，不會跳動。";
-    $("#power-state").textContent = text;
+    // 扭力：狀態、倒數、說明、按鈕各有固定大小的位置，這裡只換字與顏色
+    const power = $("#power");
     const enable = $("#enable");
-    if (!enable.classList.contains("confirm")) {
-      enable.textContent = mine ? "關扭力" : "啟用扭力";
-      enable.classList.toggle("quiet", mine);
-      enable.classList.toggle("go", !mine);
+    if (st.fault || st.torque_on || !ready) unconfirm(enable);
+    const confirming = enable.classList.contains("confirm");
+    const auto = st.last_release ? RELEASE_TEXT[st.last_release.reason] : null;
+    let badge = "關著";
+    let text;
+    let timer = "";
+    if (st.fault) {
+      badge = "已鎖住";
+      text = st.fault.reason_code + "　" + st.fault.detail + "。面板已送出關扭力；看過手、排除原因後再解除鎖定。";
+    } else if (mine) {
+      badge = "開著：這一頁控制";
+      text = "滑桿與姿勢由這一頁控制。沒有新動作時，倒數結束會自動關扭力。";
+      timer = st.moving ? "手指移動中" : "閒置 " + Math.ceil(st.hold_remaining_s || 0) + " 秒後關扭力";
+    } else if (st.torque_on) {
+      badge = "開著：另一頁控制";
+      text = "這一頁只能看，以及按停止。";
+    } else if (!ready) {
+      text = "8 顆伺服機都有回應之後才能啟用。";
+    } else if (confirming) {
+      text = "確認一隻手已經放在伺服機的電源開關上，再按一次才會啟用。";
+    } else if (auto) {
+      text = auto;
+    } else {
+      text = "手指是鬆的。啟用後，滑桿從手指現在的位置開始，不會跳動。";
     }
-    enable.disabled = mine ? false : (st.torque_on || !!st.fault || !ready);
+    power.classList.remove("offline");
+    power.classList.toggle("on", st.torque_on && !st.fault);
+    power.classList.toggle("other", st.torque_on && !mine);
+    power.classList.toggle("fault", !!st.fault);
+    put($("#power-badge"), badge);
+    put($("#power-timer"), timer);
+    const detail = $("#power-state");
+    if (detail.textContent !== text) detail.classList.remove("open");
+    put(detail, text);
+    detail.title = text;
+    if (!confirming) {
+      const quiet = !!st.fault || mine;
+      put(enable, st.fault ? "解除鎖定" : (mine ? "關扭力" : "啟用扭力"));
+      enable.classList.toggle("quiet", quiet);
+      enable.classList.toggle("go", !quiet);
+    }
+    enable.disabled = !(st.fault || mine) && (st.torque_on || !ready);
     if (st.torque_on) {
       const radio = $('#speed input[value="' + st.speed + '"]');
       if (radio && !radio.checked && document.activeElement !== radio) radio.checked = true;
@@ -325,7 +367,6 @@
     }
 
     // 姿勢
-    $("#save-hint").textContent = st.torque_on ? "會存下現在的目標角度。" : "扭力關著：會存下現在讀到的位置。";
     for (const b of document.querySelectorAll("#pose-list .play")) b.disabled = !mine || b.dataset.playable !== "1";
 
     // 伺服機表
@@ -347,8 +388,15 @@
   }
 
   function offline(text) {
-    $("#rig").textContent = text;
-    $("#power-state").textContent = "面板沒有回應時，這一頁送不出任何指令。面板超過 3 秒收不到這一頁的回報，會自己關扭力。";
+    put($("#rig"), text);
+    rigShown = { kind: null, at: 0 };
+    const power = $("#power");
+    power.classList.remove("on", "other", "fault");
+    power.classList.add("offline");
+    put($("#power-badge"), "連不到面板");
+    put($("#power-timer"), "");
+    put($("#power-state"), "這一頁現在送不出任何指令。面板超過 3 秒收不到控制頁面的回報，會自己關扭力。");
+    unconfirm($("#enable"));
     $("#enable").disabled = true;
     $("#open-all").disabled = true;
     for (const k of Object.keys(sliders)) { sliders[k].flex.setDisabled(true); sliders[k].side.setDisabled(true); }
@@ -403,14 +451,14 @@
         const again = act.appendChild(el("button", "quiet", "重新確認"));
         again.type = "button";
         again.addEventListener("click", async () => {
-          if (!confirmed(again, "確認：這個姿勢在新的校正下仍然正確")) return;
+          if (!confirmed(again, "確定仍正確")) return;
           if (!failed(await post("/api/poses/reconfirm", { name: p.name }))) loadPoses();
         });
       }
       const del = act.appendChild(el("button", "quiet danger", "刪除"));
       del.type = "button";
       del.addEventListener("click", async () => {
-        if (!confirmed(del, "確認刪除")) return;
+        if (!confirmed(del, "確定刪除")) return;
         if (!failed(await post("/api/poses/delete", { name: p.name }))) { toast("已刪除 " + p.name + "。"); loadPoses(); }
       });
     }
@@ -482,11 +530,17 @@
 
   $("#enable").addEventListener("click", async (e) => {
     const btn = e.currentTarget;
+    if (st && st.fault) { failed(await post("/api/clear_fault")); return; }
     if (inControl()) { stop(); return; }
-    if (!confirmed(btn, "確認啟用：手放在電源開關上")) return;
+    if (!confirmed(btn, "再按一次確認")) return;
     const speed = $("#speed input:checked").value;
     const res = await post("/api/enable", { speed });
     if (!failed(res)) toast("扭力已啟用。");
+  });
+
+  $("#power-state").addEventListener("click", (e) => {
+    const p = e.currentTarget;
+    if (p.classList.contains("open") || p.scrollHeight > p.clientHeight + 1) p.classList.toggle("open");
   });
 
   $("#speed").addEventListener("change", async (e) => {
