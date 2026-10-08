@@ -1,0 +1,22 @@
+# systemd 使用者服務：右手的網頁操作面板，接實體伺服機。說明：right_hand/docs/hand_panel.md
+# 安裝（不需要 sudo）：
+#   mkdir -p ~/.config/systemd/user && cp ~/this-is-yourX/right_hand/tools/hand-panel.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user start hand-panel      # 現在啟動
+#   systemctl --user enable hand-panel                                        # 之後登入時自動啟動（要不要由你決定）
+# 啟動時不會對伺服機寫入任何東西；有頁面開著才會佔用匯流排。
+# --port 用 by-id 路徑，換 USB 孔也不會變；換了驅動板要改這一行（ls /dev/serial/by-id/）。
+[Unit]
+Description=Amazing Hand right hand operator panel (web, real hardware)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/this-is-yourX/right_hand
+ExecStart=%h/this-is-yourX/right_hand/.venv/bin/python -u -m hand_panel.server --adapter scs --port /dev/serial/by-id/usb-1a86_USB_Single_Serial_5B79082703-if00 --host 0.0.0.0 --http-port 8765
+# 面板被強制結束時的補救：上次可能還留著扭力才會送關扭力，否則什麼都不做。
+ExecStopPost=%h/this-is-yourX/right_hand/.venv/bin/python -m hand_panel.safe_off
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target

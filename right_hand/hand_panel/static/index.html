@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>右手操作面板</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header class="bar">
+  <div class="bar-id">
+    <h1>右手操作面板</h1>
+    <p id="rig" class="rig">連線中…</p>
+  </div>
+  <button id="stop" class="stop" type="button">停止<small>關掉 8 顆扭力</small></button>
+</header>
+
+<main>
+  <section id="notice" class="notice" hidden aria-live="assertive"></section>
+
+  <section class="power" aria-labelledby="power-h">
+    <div class="power-text">
+      <h2 id="power-h">扭力</h2>
+      <p id="power-state">讀取中…</p>
+    </div>
+    <div class="power-ctl">
+      <fieldset class="speed" id="speed">
+        <legend>速度</legend>
+        <label><input type="radio" name="speed" value="slow" checked><span>慢</span></label>
+        <label><input type="radio" name="speed" value="normal"><span>中</span></label>
+        <label><input type="radio" name="speed" value="fast"><span>快</span></label>
+      </fieldset>
+      <button id="enable" class="go" type="button" disabled>啟用扭力</button>
+    </div>
+  </section>
+
+  <div class="cols">
+    <section class="hand" aria-labelledby="hand-h">
+      <div class="hand-head">
+        <h2 id="hand-h">手指</h2>
+        <p class="legend"><span class="key key-t"></span>目標<span class="key key-a"></span>實際位置</p>
+        <button id="open-all" class="quiet" type="button" disabled>全部張開</button>
+      </div>
+      <div id="fingers" class="fingers"></div>
+      <p class="hint">長條往下拉是彎曲，下面的橫條是左右側擺。拖動時手指會跟著走；鍵盤可用方向鍵，一次 1°。</p>
+    </section>
+
+    <section class="poses" aria-labelledby="poses-h">
+      <h2 id="poses-h">姿勢</h2>
+      <form id="save" class="save" autocomplete="off">
+        <label>名稱<input id="pose-name" name="name" required maxlength="32" pattern="[a-z0-9_]{1,32}"
+               placeholder="例：pinch_small" autocapitalize="off" spellcheck="false"></label>
+        <label>標籤<input id="pose-label" name="label" maxlength="40" placeholder="例：捏小東西"></label>
+        <button id="save-btn" class="go" type="submit">存下目前姿勢</button>
+        <p id="save-hint" class="hint"></p>
+      </form>
+      <p id="poses-error" class="notice" hidden></p>
+      <ul id="pose-list" class="pose-list"></ul>
+    </section>
+  </div>
+
+  <details class="more" id="more">
+    <summary>伺服機讀值與操作紀錄</summary>
+    <div class="more-grid">
+      <table class="servos">
+        <thead><tr><th>ID</th><th>位置</th><th>電壓</th><th>溫度</th><th>扭力</th></tr></thead>
+        <tbody id="servo-rows"></tbody>
+      </table>
+      <ol id="log" class="log"></ol>
+    </div>
+  </details>
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<script src="/app.js"></script>
+</body>
+</html>

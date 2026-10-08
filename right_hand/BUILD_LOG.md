@@ -228,6 +228,26 @@
 - 另開一個沒看過實作過程的 agent 做安全審查：沒有找到能讓實機動起來或讓 AI 端核准的路徑；找到 9 個問題並全部修正——停止在「檢查前置條件」那一瞬間送到時會被漏掉（改成停止序號）、執行緒起不來或稽核寫不進去時匯流排鎖不會釋放、NaN 溫度能通過檢查、同時開兩個 handd 會搶 socket、`/dev/cu.` 與 `/dev/tty.` 拿到不同的匯流排鎖、到位確認時不理取消、連線沒有逾時。補了 11 項回歸測試，其中 7 項在修正前的程式上會失敗。`pytest right_hand/tests -q` → 148 passed。
 - 尚未做：在 Mac mini 上安裝與實測、登記到 Claude 桌面 app、真 adapter 的只讀實測（`--adapter scs`）、「執行中殺掉 handd」的自動化測試。
 
+## 2026-10-08 — 手移到 Raspberry Pi 4；網頁操作面板
+
+- 使用者把驅動板改接到內網的一台 Raspberry Pi 4（Model B Rev 1.5、2 GB、Debian 13、Python 3.13.5），要求把環境裝好。在 RPi 上 clone 本 repo、建 `.venv`、裝 `requirements.txt`，沒有用到 sudo：rustypot 是 1.11.0（Mac 上是 1.10.0）；驅動板是 `/dev/ttyACM0`（USB `1a86:55d3`），使用者帳號已在 `dialout` 群組。`pytest right_hand/tests -q` → 148 passed；`servo_tool.py scan` 回報 ID 1–8 都是 SCS0009（只讀）。
+- 使用者要求：在這台 RPi 上做一個可以逐指控制、把姿勢存下來供之後重現的網頁。做成 `hand_panel/`，決策寫成 [ADR-0007](../docs/adr/0007-hand-operator-web-panel.md)（proposed），說明在 [`docs/hand_panel.md`](docs/hand_panel.md)：
+  - 定位和 `servo_tool.py` 相同：給人用的工作台工具，不是 skill，也不是 AI 的控制路徑。`hand_api` 的 gateway 沒有改；`config/poses.yaml` 不被 `hand_api` 讀取。
+  - `hand_panel/core.py`：一條 worker 執行緒獨占 adapter，沿用 `hand_api.adapter`（含匯流排鎖）與 `hand_api.motion.move_together`。啟動不寫入；啟用扭力前先把目標設成目前位置；一次只有一個頁面能控制；控制的頁面 3 秒沒回報、閒置 60 秒、任何檢查沒過都關扭力，後者鎖住 fault。沒有頁面開著時不佔匯流排。
+  - `hand_panel/poses.py`：`poses.yaml` 的讀寫（整檔替換；格式或範圍不對就拒絕讀寫、不覆蓋）。姿勢記下校正版本，校正改了要重新確認。
+  - `hand_panel/server.py`：標準函式庫的 HTTP 伺服器；`hand_panel/static/`：頁面，沒有外部資源。`hand_panel/safe_off.py`：面板被強制結束後由 systemd 補送關扭力。
+  - 每根手指兩個量：彎曲 −30° 到 +90°、側擺 ±40°，兩顆伺服機各自在 ±90°（含中位修正 ±95°）以內。
+- 部署在 RPi：systemd 使用者服務 `hand-panel`（`tools/hand-panel.service`，8765 埠，`--adapter scs`）。已啟動，沒有設成開機自動啟動。
+- 最初的版本要一組存取碼。使用者決定拿掉，理由是只在自己的內網使用。改成預設不需要、保留 `--require-token`；不論有沒有存取碼，跨站的 POST 與用別的主機名稱送來的請求都拒絕。同網段上連得到這個埠的裝置都能操作這隻手，這一點記在 ADR-0007 的 Consequences。
+- 驗證：`pytest right_hand/tests -q` → 281 passed（新增 133 項，全部在假 adapter 或假匯流排上）。寫程式的這一方（AI）在實機上只做了只讀確認：頁面開著時讀到 8 顆、扭力皆關、沒有寫入；頁面關掉後 `servo_tool.py scan` 可用。它沒有對實機下過任何動作。
+- 實機使用（使用者操作，19:27–20:01；依據是 `logs/panel_events.jsonl`，bring-up 觀察，沒有 experiment ID）：151 段移動，150 段到位並停下（慢 67、中 40、快 43），到位後目標與實際的差平均 1.5°、最大 7.0°。一次 `LAG_EXCEEDED`：快速檔，拇指 ID 7 第 3／8 輪目標 +5.2°、實際 −14.1°；面板關掉 8 顆扭力並鎖住，使用者 10 秒後解除。閒置逾時關扭力 3 次、按停止 4 次，每次 8 顆都關成功。存了 `ya`、`one`、`two`、`three`、`stone` 五個姿勢，重現 34 次。這也是 `hand_api` 的真 adapter 與 `motion.move_together` 第一次在實機上寫入；先前實機上跑的是 `servo_tool.py` 自己的版本。
+- 使用者問能不能用 RPi 取代驅動板。評估後決定維持 USB 接法：
+  - 驅動板做三件事：USB 轉 UART、把 TX／RX 併成伺服機的單線半雙工、分配伺服機的 5 V。RPi 只能直接取代第一件。
+  - 留著板子、改走 RPi 的 GPIO UART 是可行的：[Seeed 的說明](https://wiki.seeedstudio.com/bus_servo_driver_board/)寫這塊板有 UART 模式（拔掉正面的跳線帽，D7 是板子的 RX、D6 是板子的 TX）。沒有做，所以 D6／D7 的電位、UART 模式下有沒有回音都沒有量過；RPi 的 GPIO 不耐 5 V。
+  - 完全不用板子，就要自己做半雙工電路、可能的電位轉換，以及獨立的伺服機電源與配線（8 顆不能從 RPi 的 5 V 腳取電）。
+  - 能得到的只有少一條 USB 線與每筆通訊約 1 ms 的 USB 延遲，對現在的用法沒有實質差別。
+- 尚未做：面板在實機上的故障注入；`handd`／MCP 在 RPi 上只裝了環境，沒有啟動。
+
 ### 待辦（下一次接手從這裡開始）
 
 收尾：
@@ -251,3 +271,7 @@
 - [ ] 把 bring-up 工具收斂成 hardware adapter（含 fake adapter、timestamp／freshness、斷線與 safe-state 測試），建立 8-DOF 的 semantic component IDs 與 manifest。
 - [ ] 雙目相機：跑 probe 腳本確認解析度、FPS、左右眼，再進 ADR-0005 的驗證項目。
 - [ ] （選做）量測 USB 外殼之間的電位差。
+- [ ] ADR-0007：決定要不要接受；`hand-panel` 服務要不要開機自動啟動。
+- [ ] 面板在實機上的故障注入：移動中關頁面、拔 USB、切電源、殺面板。
+- [ ] 快速檔下拇指落後 19.3°（上限 19°）那一次：重現看看是起步慢還是被擋住，再決定要不要動速度檔。
+- [ ] `handd`／MCP 要不要搬到 RPi（ADR-0006 的 Revisit 條件「有 Linux robot host」已成立）。

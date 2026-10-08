@@ -14,6 +14,7 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 | 變壓器 | 標示 5V 3A（符合 SCS0009 的 4.0–7.4V） |
 | 驅動板供電 | VCC–GND 量得 5V（使用者回報，2026-10-04） |
 | Mac 環境與序列埠 | 已建立：Python 3.12.15、rustypot 1.10.0、`/dev/cu.usbmodem5B790827031` |
+| Raspberry Pi 環境與序列埠 | 2026-10-08 起手接在一台 Raspberry Pi 4（Debian 13）：Python 3.13.5、rustypot 1.11.0、`/dev/ttyACM0`；`scan` 回報 ID 1–8 都是 SCS0009 |
 | 驅動板模式與通訊 | USB 模式可用；`scan` 回報 `ID 1  SCS0009`（2026-10-04） |
 | 8 顆伺服機單顆測試、設 ID | 8 / 8：ID 1–8 測試通過並完成設定（4.7–5.1 V、22–23 °C）；ID 2 斷電後仍保存，其餘未個別驗證斷電保存 |
 | USB 接地 | **已緩解，成因未量測**：驅動板改經 USB hub 接 Mac mini 後，螢幕不再受影響（使用者回報，2026-10-07） |
@@ -29,6 +30,8 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 
 **AI 介面（ADR-0006）**：P1（只讀）與 P2（模擬上的提議、逐次核准、執行）已實作並在開發機上測過，還沒在 Mac mini 上跑過。接實體伺服機時只能讀狀態，動作一律拒絕。見 [`docs/hand_api_design.md`](docs/hand_api_design.md)。
 
+**網頁操作面板（ADR-0007，proposed）**：人在瀏覽器上逐指操作、存下與重現姿勢，跑在接著手的那台主機上（2026-10-08 起是一台 Raspberry Pi 4）。133 項測試在假 adapter 與假匯流排上通過。實機上 George 當天操作了約半小時（151 段移動、150 段到位，存了 5 個姿勢），是 bring-up 觀察、沒有 experiment ID；實機上的故障注入還沒做。它是給人用的工具，不是 AI 的控制路徑，預設也沒有登入（只在自己的內網用）。見 [`docs/hand_panel.md`](docs/hand_panel.md)。
+
 ## 目錄
 
 ```text
@@ -38,12 +41,14 @@ right_hand/
 ├── requirements.txt
 ├── config/                         # body manifest、校正值、手勢表（ADR-0006）
 ├── hand_api/                       # AI 介面：adapter、gateway、handd、hand 指令、MCP server
+├── hand_panel/                     # 網頁操作面板（人工操作）：核心、姿勢檔、HTTP 伺服器、頁面
 ├── THIRD_PARTY_NOTICES.md          # 官方手冊圖片的來源與授權
 ├── docs/
 │   ├── assembly_guide.md           # 組裝順序、Seeed 套件差異、注意事項、來源
 │   ├── arrival_inspection.md       # 到貨清點結果
 │   ├── gesture_calibration.md      # 固定手勢的定案角度與指尖間距對照（OK）
 │   ├── hand_api_design.md          # AI 介面的設計、核准流程、安裝與接上 AI 工具
+│   ├── hand_panel.md               # 網頁操作面板：啟動、第一次實機使用、自動關扭力的條件、限制
 │   └── assembly_checklist/
 │       ├── index.html              # 75 項可勾選檢查表，瀏覽器直接開
 │       ├── progress.json           # 進度快照
@@ -56,11 +61,14 @@ right_hand/
 │   ├── finger_cal.sh               # 單指校正（center、finger）、全手測試（hand）、固定手勢（gesture）
 │   ├── handd.sh                    # 啟動 handd（預設模擬；--adapter scs 接實體只讀）
 │   ├── hand.sh                     # 操作者指令：status、pending、approve、stop、clear-fault、log
-│   └── hand_mcp.py                 # MCP stdio server 進入點（登記到 AI 工具用）
+│   ├── hand_mcp.py                 # MCP stdio server 進入點（登記到 AI 工具用）
+│   ├── hand_panel.sh               # 啟動網頁操作面板；`url` 印出網址
+│   └── hand-panel.service          # 面板的 systemd 使用者服務（接實體）
 └── tests/
     ├── fake_scs_bus.py             # 假的 SCS 匯流排
     ├── test_servo_tool.py
-    └── test_hand_api.py
+    ├── test_hand_api.py
+    └── test_hand_panel.py
 ```
 
 ## 快速開始
