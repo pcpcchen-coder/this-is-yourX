@@ -204,6 +204,30 @@
   - `fast` 下拇指 ID 7 被要求的速度約 240°/s，伺服機速度上限設在約 258°/s，已經很接近，表裡不再加更快的選項。
   - `normal` 有沒有跑過，這張畫面看不出來。
 
+## 2026-10-08 — AI 介面：現有工具調查與設計
+
+- 使用者要求：找 GitHub 上有沒有這隻手的 API 工具；沒有的話設計一套，讓 AI 之後可以在對話中控制這隻手。
+- 調查結果（網頁搜尋加逐一開專案頁；這個工作階段不能用 GitHub 搜尋 API，可能有漏）：
+  - 官方 `pollen-robotics/AmazingHand`：示範腳本與 Demo，不是 API。
+  - `Betatester777/AmazingHandControl`：GUI 加 CLI，有具名 pose 與 sequence，最接近可重用的控制層，但沒有 agent 介面或授權。
+  - `CRAZY0921/AmazingHand_ROS2`、`Juxi-Rui/Lerobot-AmazingHand`：ROS 2 套件與 LeRobot fork，都很早期，目標不同。
+  - 沒有找到給 Amazing Hand 用的 MCP server 或其他 agent 介面。
+- 設計寫成 [ADR-0006](../docs/adr/0006-hand-skill-api-mcp.md)（proposed）與 [`docs/hand_api_design.md`](docs/hand_api_design.md)：hardware adapter（真／假）、skill gateway 常駐程式 `handd`、MCP 介面卡、操作者 CLI；AI 只能從已校正的手勢表選名字、速度檔、停留秒數；授權是實體開關加上本機開啟的有期限 session。
+- 這一天只有文件，沒有新增程式，也沒有實機動作。`pytest right_hand/tests -q` → 69 passed（未變）。
+
+- 使用者問要怎麼讓 AI 直接操作這隻手。回覆：AI 介面還沒做，做好後在同一個對話（Claude 桌面 app 登記本機 MCP server）或 Mac mini 上的 Claude Code 都能用。使用者決定：**先做到模擬可動（P1＋P2）**、**授權採每個動作都核准**（不採原本建議的有期限 session）。ADR-0006 改為 accepted 並記下決定。
+- 實作 `hand_api`（P1＋P2）：
+  - `config/body.yaml`（15 個元件，通過 `schemas/component.schema.json` 0.1.0，沒有改 schema）、`calibration.yaml`（revision `2026-10-07.r1`，中位修正全 0）、`gestures.yaml`（只有 `ok`）。
+  - `hand_api/adapter.py`：真 adapter（rustypot，每次操作才開埠）與假 adapter（可注入卡住、斷線、電壓、溫度、過期讀值）；和 `servo_tool.py` 共用匯流排檔案鎖。
+  - `hand_api/motion.py`：四指同時移動與檢查，移植自 `servo_tool.py`，有測試確認角度與速度檔一致。
+  - `hand_api/gateway.py`：參數驗證、前置條件（fail closed）、逐次核准（60 秒、單次、綁參數雜湊）、fault 鎖、速率限制、idempotency、停止、JSONL 稽核；真硬體一律 `REAL_MOTION_NOT_ENABLED`。
+  - `hand_api/daemon.py`（handd，`ai.sock`／`operator.sock` 分流）、`cli.py`（`hand`）、`mcp_server.py`（9 個 tool，沒有核准工具、沒有角度參數）。
+  - `tools/servo_tool.py` 的 `open_bus` 加上同一個匯流排鎖：handd 正在讀時，bring-up 工具會拒絕開埠並說明原因。
+  - 相依套件加 `pyyaml>=6`、`mcp>=2.2,<3`。
+- 驗證（開發機，沒有硬體）：`pytest right_hand/tests -q` → 137 passed（新增 68 項；審查修正後見下一條）。逐一拿掉核准檢查、狀態檢查、落後檢查、AI socket 的核准限制、真硬體限制、結束關扭力、單次核准，各自都有測試失敗。另以真實程序跑過一次端到端：handd（模擬）＋ `tools/hand_mcp.py`（stdio）＋ 操作者 socket 核准 → succeeded。`pyflakes` 無警告。
+- 另開一個沒看過實作過程的 agent 做安全審查：沒有找到能讓實機動起來或讓 AI 端核准的路徑；找到 9 個問題並全部修正——停止在「檢查前置條件」那一瞬間送到時會被漏掉（改成停止序號）、執行緒起不來或稽核寫不進去時匯流排鎖不會釋放、NaN 溫度能通過檢查、同時開兩個 handd 會搶 socket、`/dev/cu.` 與 `/dev/tty.` 拿到不同的匯流排鎖、到位確認時不理取消、連線沒有逾時。補了 11 項回歸測試，其中 7 項在修正前的程式上會失敗。`pytest right_hand/tests -q` → 148 passed。
+- 尚未做：在 Mac mini 上安裝與實測、登記到 Claude 桌面 app、真 adapter 的只讀實測（`--adapter scs`）、「執行中殺掉 handd」的自動化測試。
+
 ### 待辦（下一次接手從這裡開始）
 
 收尾：
@@ -220,7 +244,10 @@
 - [x] `gesture ok fast`：實機跑過一次，12 輪 0.5 秒，正常結束。
 - [ ] `gesture ok normal`：還沒看到實機紀錄。
 - [ ] 補上獨立的 E-stop，再讓任何 skill 驅動這隻手。
-- [ ] 把手勢從 bring-up 工具搬到 versioned skill（參數 schema、前置條件、限制、timeout、取消、稽核事件、模擬與拒絕測試）。
+- [x] ADR-0006 授權方式：逐次核准（2026-10-08 使用者決定）。
+- [ ] Mac mini：`pip install -r right_hand/requirements.txt`、跑 `handd.sh`（模擬與 `--adapter scs` 只讀各一次）、登記 MCP server、在對話裡走一次提議 → 核准 → 模擬執行。
+- [ ] ADR-0006 P3 前：決定並裝上固定的實體開關／E-stop；決定第一批要校正的手勢。
+- [ ] 把手勢從 bring-up 工具搬到 versioned skill（參數 schema、前置條件、限制、timeout、取消、稽核事件、模擬與拒絕測試）。設計見 `docs/hand_api_design.md`，分期 P1–P4。
 - [ ] 把 bring-up 工具收斂成 hardware adapter（含 fake adapter、timestamp／freshness、斷線與 safe-state 測試），建立 8-DOF 的 semantic component IDs 與 manifest。
 - [ ] 雙目相機：跑 probe 腳本確認解析度、FPS、左右眼，再進 ADR-0005 的驗證項目。
 - [ ] （選做）量測 USB 外殼之間的電位差。
