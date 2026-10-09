@@ -1,0 +1,219 @@
+/* 右手操作面板。兩種顏色各只有一個意思：藍 = 下給手的目標，琥珀 = 讀回來的實際位置。紅色只給「停止」與鎖住的故障。 */
+:root {
+  --mat: #d7dfdc;
+  --panel: #f6f8f7;
+  --line: #b4c0bc;
+  --ink: #152a30;
+  --soft: #4d6168;
+  --target: #1b5ec2;
+  --target-wash: #cfe0f6;
+  --actual: #a85d00;
+  --stop: #c2241a;
+  --go: #1f6f47;
+  --finger-w: 3rem;
+  --track-h: 15rem;
+  font-family: "PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Microsoft JhengHei", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--mat);
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scrollbar-gutter: stable; }
+body { margin: 0; line-height: 1.5; padding-bottom: 6.5rem; }
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: .02em; }
+h2 { font-size: 1.05rem; font-weight: 700; }
+h3 { font-size: 1rem; font-weight: 700; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+:focus-visible { outline: 3px solid var(--target); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+/* ---------- 頂列與停止 ---------- */
+.bar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: .6rem 1rem; background: var(--ink); color: #eef3f1;
+}
+.bar-id { min-width: 0; flex: 1 1 auto; }
+/* 頂列的狀態字固定兩行高：字數變了也不會把整頁往下推 */
+.rig {
+  font-size: .85rem; line-height: 1.3; height: 2.6em; color: #b9c9c5; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.stop {
+  position: fixed; left: .75rem; right: .75rem; bottom: calc(.75rem + env(safe-area-inset-bottom));
+  z-index: 10; min-height: 4.5rem; border: 0; border-radius: .9rem;
+  background: var(--stop); color: #fff; font-size: 1.6rem; font-weight: 800; letter-spacing: .3em; text-indent: .3em;
+  box-shadow: 0 .35rem 0 #7d150e, 0 .6rem 1.2rem rgba(21, 42, 48, .35);
+}
+.stop small { display: block; font-size: .8rem; font-weight: 500; letter-spacing: .05em; text-indent: 0; opacity: .9; }
+.stop:active { transform: translateY(.25rem); box-shadow: 0 .1rem 0 #7d150e; }
+.stop:focus-visible { outline-color: #fff; outline-offset: -6px; }
+
+main { max-width: 68rem; margin: 0 auto; padding: 1rem; display: grid; gap: 1rem; }
+main > section, .cols > section, .more { background: var(--panel); border: 1px solid var(--line); border-radius: .6rem; padding: 1rem; }
+
+.notice { border: 2px solid var(--stop); background: #fff4f2; }
+.notice h2 { color: var(--stop); }
+.notice p { margin-top: .35rem; }
+.notice code { font-family: inherit; font-weight: 700; }
+.notice button { margin-top: .75rem; }
+.notice.info { border-color: var(--line); background: var(--panel); border-width: 1px; }
+.notice.info h2 { color: var(--ink); }
+
+/* ---------- 扭力 ----------
+   這一區每個位置的大小都是固定的：狀態、倒數、說明換字時只換字與顏色，下面的手指區不會跟著上下移動。 */
+.power {
+  display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "ctl" "detail";
+  align-items: center; gap: .6rem 1rem;
+}
+.power-head { grid-area: head; display: flex; align-items: center; gap: .5rem .75rem; flex-wrap: wrap; min-width: 0; }
+.badge {
+  display: inline-block; min-width: 10.5rem; padding: .15rem .7rem; text-align: center; white-space: nowrap;
+  border: 1px solid var(--line); border-radius: 1rem; background: #fff; font-weight: 700;
+}
+.timer { min-width: 9.5rem; min-height: 1.5em; color: var(--soft); font-size: .9rem; white-space: nowrap; }
+.power-ctl { grid-area: ctl; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; }
+.power-detail {
+  grid-area: detail; color: var(--soft); height: 4.5em; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+}
+/* 說明被截斷時（很長的故障訊息），點一下展開；這是使用者自己觸發的，不算畫面亂跳。 */
+.power-detail.open { height: auto; min-height: 4.5em; display: block; }
+.power.on { border-color: var(--go); box-shadow: inset .35rem 0 0 var(--go); }
+.power.on .badge { background: var(--go); border-color: var(--go); color: #fff; }
+.power.on.other .badge { background: #fff; color: var(--go); }
+.power.fault { border-color: var(--stop); box-shadow: inset .35rem 0 0 var(--stop); }
+.power.fault .badge { background: var(--stop); border-color: var(--stop); color: #fff; }
+.power.fault .power-detail { color: var(--ink); }
+.power.offline .badge { border-color: var(--stop); color: var(--stop); }
+.main { flex: 0 0 auto; width: 9.5rem; padding-left: .4rem; padding-right: .4rem; white-space: nowrap; }
+@media (min-width: 62rem) {
+  .power { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "head ctl" "detail detail"; }
+  .power-detail { height: 3em; -webkit-line-clamp: 2; }
+  .power-detail.open { min-height: 3em; }
+}
+.speed { border: 0; padding: 0; margin: 0; display: flex; align-items: center; gap: .5rem; }
+.speed legend { float: left; padding: 0 .5rem 0 0; font-size: .9rem; color: var(--soft); white-space: nowrap; }
+.speed label { position: relative; }
+.speed input { position: absolute; opacity: 0; inset: 0; }
+.speed span {
+  display: grid; place-items: center; min-width: 2.75rem; min-height: 2.75rem;
+  border: 1px solid var(--line); border-radius: .4rem; background: #fff;
+}
+.speed input:checked + span { background: var(--ink); color: #fff; border-color: var(--ink); }
+.speed input:focus-visible + span { outline: 3px solid var(--target); outline-offset: 2px; }
+.go, .quiet {
+  min-height: 2.75rem; padding: .5rem 1.1rem; border-radius: .4rem; font-weight: 700;
+  border: 1px solid var(--go); background: var(--go); color: #fff;
+}
+.go.confirm { background: #fff; color: var(--go); }
+.quiet { background: #fff; color: var(--ink); border-color: var(--line); font-weight: 500; }
+.quiet.danger.confirm { border-color: var(--stop); color: var(--stop); font-weight: 700; }
+
+/* ---------- 手指 ---------- */
+.cols { display: grid; gap: 1rem; }
+@media (min-width: 62rem) { .cols { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: start; } }
+.hand-head { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.legend { color: var(--soft); font-size: .9rem; display: flex; align-items: center; gap: .35rem; margin-right: auto; }
+.key { display: inline-block; margin-left: .6rem; }
+.key-t { width: 1.1rem; height: .7rem; border-radius: .35rem; background: var(--target); }
+.key-a { width: 1.1rem; height: .2rem; background: var(--actual); }
+
+.fingers { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; margin-top: 1rem; }
+.finger { display: grid; justify-items: center; gap: .5rem; text-align: center; min-width: 0; }
+.finger[data-finger="thumb"] { padding-top: 3.5rem; border-right: 1px dashed var(--line); padding-right: .5rem; }
+.finger .ids { font-size: .8rem; color: var(--soft); }
+
+.track { position: relative; background: #e3e9e7; border: 1px solid var(--line); touch-action: none; cursor: grab; }
+.track[aria-disabled="true"] { cursor: default; }
+.track.v { width: var(--finger-w); height: var(--track-h); border-radius: 1.5rem 1.5rem .4rem .4rem; }
+.track.h { width: 100%; max-width: 8rem; height: 1.75rem; border-radius: .9rem; }
+.fill { position: absolute; background: var(--target-wash); pointer-events: none; }
+.track.v .fill { left: 0; right: 0; top: 0; border-radius: 1.45rem 1.45rem 0 0; }
+.track.h .fill { top: 0; bottom: 0; border-radius: .9rem; }
+.tick { position: absolute; left: 0; width: .45rem; border-top: 1px solid var(--soft); pointer-events: none; }
+.tick b { position: absolute; left: calc(var(--finger-w) + .3rem); top: -.65rem; font-size: .72rem; font-weight: 400; color: var(--soft); white-space: nowrap; }
+.track.h .tick { top: 0; left: 50%; width: 0; height: .4rem; border-top: 0; border-left: 1px solid var(--soft); }
+.handle {
+  position: absolute; background: var(--target); border: 2px solid #fff; pointer-events: none;
+  box-shadow: 0 1px 3px rgba(21, 42, 48, .4);
+}
+.track.v .handle { left: -.4rem; right: -.4rem; height: 1.3rem; margin-top: -.65rem; border-radius: .65rem; }
+.track.h .handle { top: -.3rem; bottom: -.3rem; width: 1.3rem; margin-left: -.65rem; border-radius: .65rem; }
+.track[aria-disabled="true"] .handle, .track[aria-disabled="true"] .fill { display: none; }
+.meas { position: absolute; background: var(--actual); pointer-events: none; }
+.track.v .meas { left: -.7rem; right: -.7rem; height: 3px; margin-top: -1.5px; }
+.track.h .meas { top: -.5rem; bottom: -.5rem; width: 3px; margin-left: -1.5px; }
+.track.live .handle { transform: scale(1.08); }
+
+.read { margin: 0; font-size: .85rem; line-height: 1.35; }
+.read dt { color: var(--soft); }
+.read dd { margin: 0; }
+.read .t { color: var(--target); font-weight: 700; }
+.read .t.none { color: var(--soft); font-weight: 400; }
+.read .a { color: var(--actual); }
+.finger .quiet { min-height: 2.5rem; padding: .3rem .8rem; }
+.hint { color: var(--soft); font-size: .88rem; margin-top: .9rem; max-width: 60ch; }
+
+/* ---------- 姿勢 ---------- */
+.save { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; margin-top: .75rem; align-items: end; }
+.save label { display: grid; gap: .2rem; font-size: .9rem; color: var(--soft); min-width: 0; }
+.save input { min-height: 2.75rem; padding: .4rem .6rem; border: 1px solid var(--line); border-radius: .4rem; background: #fff; color: var(--ink); width: 100%; }
+.save input::placeholder { color: #93a29e; }
+.save button, .save .hint { grid-column: 1 / -1; }
+.save .hint { margin-top: 0; }
+.pose-list { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; gap: .6rem; }
+.pose { border-top: 1px solid var(--line); padding-top: .6rem; display: grid; gap: .4rem; }
+.pose-head { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+.pose-head strong { font-size: 1rem; }
+.pose-head code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .85rem; color: var(--soft); }
+.pose-meta { font-size: .82rem; color: var(--soft); }
+.pose-angles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .3rem; font-size: .82rem; margin: 0; }
+.pose-angles div { background: #e9eeec; border-radius: .3rem; padding: .25rem .4rem; }
+.pose-angles dt { color: var(--soft); }
+.pose-angles dd { margin: 0; }
+.pose-why { font-size: .85rem; color: var(--stop); }
+.pose-act { display: flex; gap: .5rem; flex-wrap: wrap; }
+.pose-act .go, .pose-act .quiet { min-height: 2.5rem; min-width: 6.5rem; padding: .3rem .9rem; white-space: nowrap; }
+.empty { color: var(--soft); border-top: 1px solid var(--line); padding-top: .75rem; }
+
+/* ---------- 讀值與紀錄 ---------- */
+.more summary { cursor: pointer; font-weight: 700; min-height: 2rem; }
+.more-grid { display: grid; gap: 1rem; margin-top: .75rem; }
+@media (min-width: 62rem) { .more-grid { grid-template-columns: auto 1fr; } }
+.servos { border-collapse: collapse; font-size: .9rem; }
+.servos th, .servos td { text-align: right; padding: .25rem .7rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.servos th { font-weight: 500; color: var(--soft); }
+.servos td.bad { color: var(--stop); font-weight: 700; text-align: left; }
+.log { margin: 0; padding: 0; list-style: none; font-size: .85rem; display: grid; gap: .2rem; max-height: 16rem; overflow: auto; }
+.log time { color: var(--soft); margin-right: .6rem; }
+
+.toast {
+  position: fixed; left: 50%; bottom: calc(6.25rem + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  z-index: 11; max-width: min(34rem, calc(100vw - 1.5rem)); padding: .7rem 1rem; border-radius: .5rem;
+  background: var(--ink); color: #fff; box-shadow: 0 .4rem 1rem rgba(21, 42, 48, .35);
+}
+.toast.bad { background: var(--stop); }
+
+@media (min-width: 62rem) {
+  body { padding-bottom: 2rem; }
+  .stop { position: static; min-height: 3.5rem; min-width: 15rem; font-size: 1.35rem; box-shadow: 0 .3rem 0 #7d150e; }
+  .toast { bottom: 1.5rem; }
+  :root { --finger-w: 3.5rem; --track-h: 17rem; }
+}
+@media (max-width: 26rem) {
+  main { padding: .6rem; }
+  main > section, .cols > section, .more { padding: .75rem; }
+  .tick b { display: none; }
+  :root { --finger-w: 2.6rem; }
+  .power-ctl { gap: .5rem; }
+  .speed span { min-width: 2.5rem; }
+  .main { width: 8.5rem; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .handle { transition: transform .12s; }
+  .meas { transition: top .2s linear, left .2s linear; }
+}
