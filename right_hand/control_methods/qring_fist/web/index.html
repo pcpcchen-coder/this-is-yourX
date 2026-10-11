@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QRing Hand</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="bar">
+  <h1>QRing Hand <small id="version"></small></h1>
+  <nav aria-label="頁面">
+    <button type="button" data-tab="control" aria-pressed="true">控制</button>
+    <button type="button" data-tab="calibration" aria-pressed="false">校正</button>
+    <button type="button" data-tab="settings" aria-pressed="false">設定</button>
+  </nav>
+  <div class="links">
+    <span class="chip" id="chip-ring"><i></i><b>戒指</b><span>未連線</span></span>
+    <span class="chip" id="chip-hand"><i></i><b>手掌</b><span>未連線</span></span>
+  </div>
+  <button type="button" id="stop" class="stop" title="關掉手掌扭力（Esc）">停止</button>
+</header>
+
+<div id="toast" role="status" aria-live="polite" hidden></div>
+
+<main>
+<!-- ───────────────────────────── 控制 ───────────────────────────── -->
+<section id="tab-control" class="tab">
+  <ol class="steps" id="steps">
+    <li data-step="ring"><span>連接戒指</span></li>
+    <li data-step="hand"><span>連接手掌</span></li>
+    <li data-step="cal"><span>校正張開與握拳</span></li>
+    <li data-step="go"><span>啟動跟隨</span></li>
+  </ol>
+
+  <div class="bench">
+    <article class="unit ring-unit" aria-labelledby="h-ring">
+      <h2 id="h-ring">戒指</h2>
+      <p class="state" id="ring-state">尚未連線</p>
+      <dl class="facts">
+        <div><dt>電量</dt><dd id="ring-battery">—</dd></div>
+        <div><dt>更新率</dt><dd id="ring-rate">—</dd></div>
+        <div><dt>硬體</dt><dd id="ring-hw">—</dd></div>
+        <div><dt>韌體</dt><dd id="ring-fw">—</dd></div>
+      </dl>
+      <div class="axes" id="axes" aria-label="三軸加速度（g）">
+        <div class="axis"><span>X</span><div class="track"><i></i></div><output>—</output></div>
+        <div class="axis"><span>Y</span><div class="track"><i></i></div><output>—</output></div>
+        <div class="axis"><span>Z</span><div class="track"><i></i></div><output>—</output></div>
+      </div>
+      <p class="note" id="ring-touch">觸控：—</p>
+      <button type="button" id="ring-toggle" class="primary">連接戒指</button>
+    </article>
+
+    <article class="stage" aria-labelledby="h-follow">
+      <h2 id="h-follow" class="visually-hidden">跟隨</h2>
+      <div class="pair">
+        <figure>
+          <svg id="finger-you" viewBox="0 0 220 150" role="img" aria-label="你的手指"></svg>
+          <figcaption>你的手 <output id="curl-you">—</output></figcaption>
+        </figure>
+        <div class="flow" id="flow" aria-hidden="true"><i></i><i></i><i></i></div>
+        <figure>
+          <svg id="finger-robot" viewBox="0 0 220 150" role="img" aria-label="機器手指"></svg>
+          <figcaption>機器手 <output id="curl-robot">—</output></figcaption>
+        </figure>
+      </div>
+      <p class="reading" id="reading">等戒指的三軸資料</p>
+
+      <button type="button" id="power" class="power" aria-pressed="false" disabled>
+        <span class="rocker"><i></i></span>
+        <span class="power-text"><b id="power-title">啟動跟隨</b><small id="power-sub">手掌會立刻跟著你的手動</small></span>
+      </button>
+      <p class="message" id="message"></p>
+    </article>
+
+    <article class="unit hand-unit" aria-labelledby="h-hand">
+      <h2 id="h-hand">手掌</h2>
+      <p class="state" id="hand-state">尚未連線</p>
+      <dl class="facts">
+        <div><dt>伺服機</dt><dd id="hand-servos">—</dd></div>
+        <div><dt>電壓</dt><dd id="hand-volt">—</dd></div>
+        <div><dt>最高溫</dt><dd id="hand-temp">—</dd></div>
+        <div><dt>扭力</dt><dd id="hand-torque">—</dd></div>
+      </dl>
+      <div class="fingers" id="fingers"></div>
+      <p class="note" id="hand-note"></p>
+      <div class="row">
+        <button type="button" id="hand-toggle" class="primary">連接手掌</button>
+        <button type="button" id="hand-clear" hidden>解除鎖定</button>
+      </div>
+    </article>
+  </div>
+
+  <details class="log" open>
+    <summary>最近的事件</summary>
+    <ul id="events"></ul>
+  </details>
+</section>
+
+<!-- ───────────────────────────── 校正 ───────────────────────────── -->
+<section id="tab-calibration" class="tab" hidden>
+  <div class="cal-head">
+    <div>
+      <h2>校正張開與握拳</h2>
+      <p>戒指量的是重力方向。手掌的方向不變時，握拳會讓戴戒指的那節手指轉一個角度；記下張開與握拳兩個讀值，中間就能換算成握拳程度。</p>
+    </div>
+    <div class="cal-actions">
+      <button type="button" id="cal-start" class="primary">開始校正</button>
+      <button type="button" id="cal-cancel" hidden>取消</button>
+    </div>
+  </div>
+
+  <p class="cal-message" id="cal-message"></p>
+
+  <div class="poses">
+    <article class="pose" id="pose-open">
+      <svg viewBox="0 0 220 150" aria-hidden="true" data-curl="0"></svg>
+      <h3>張開</h3>
+      <p class="pose-state">還沒記錄</p>
+      <div class="row">
+        <button type="button" class="capture primary" data-pose="open" disabled>記錄張開</button>
+        <button type="button" class="retake" data-pose="open" hidden>重記</button>
+      </div>
+    </article>
+    <article class="pose" id="pose-fist">
+      <svg viewBox="0 0 220 150" aria-hidden="true" data-curl="1"></svg>
+      <h3>握拳</h3>
+      <p class="pose-state">還沒記錄</p>
+      <div class="row">
+        <button type="button" class="capture primary" data-pose="fist" disabled>記錄握拳</button>
+        <button type="button" class="retake" data-pose="fist" hidden>重記</button>
+      </div>
+    </article>
+    <article class="pose live">
+      <h3>現在的讀值</h3>
+      <div class="steady" id="steady"><i></i><span>等資料</span></div>
+      <div class="axes" id="cal-axes" aria-label="三軸加速度（g）">
+        <div class="axis"><span>X</span><div class="track"><i></i></div><output>—</output></div>
+        <div class="axis"><span>Y</span><div class="track"><i></i></div><output>—</output></div>
+        <div class="axis"><span>Z</span><div class="track"><i></i></div><output>—</output></div>
+      </div>
+      <p class="note">保持姿勢不動約 2 秒，顯示「已停穩」後按記錄，或單擊戒指。</p>
+    </article>
+  </div>
+
+  <article class="review" id="review">
+    <h3>握拳程度</h3>
+    <div class="meter" id="meter">
+      <div class="meter-track"><i class="meter-fill"></i><i class="meter-raw"></i><b class="mark lo"></b><b class="mark hi"></b></div>
+      <div class="meter-scale"><span>張開</span><output id="meter-value">—</output><span>握拳</span></div>
+    </div>
+    <p class="note" id="review-note">校正後，這裡會即時顯示握拳程度。</p>
+    <div class="row">
+      <button type="button" id="cal-save" class="primary" hidden>儲存校正</button>
+    </div>
+  </article>
+
+  <aside class="limits">
+    <h3>單顆戒指量得到與量不到的</h3>
+    <ul>
+      <li>校正和操作時，手掌要維持同一個方向。掌心朝下、或手指朝上（像舉手）都可以。</li>
+      <li>手掌直立、手指朝前（握手的姿勢）量不到：握拳的轉軸和重力平行，讀值不會變。</li>
+      <li>轉手腕或前臂也會改變讀值，戒指分不出來。偏離校正太多時 APP 會停在上一個位置，不亂動。</li>
+      <li>揮動手臂時的讀值不採用；動作放慢，手掌會跟得比較準。</li>
+    </ul>
+  </aside>
+</section>
+
+<!-- ───────────────────────────── 設定 ───────────────────────────── -->
+<section id="tab-settings" class="tab" hidden>
+  <div class="settings">
+    <fieldset>
+      <legend>手掌面板</legend>
+      <label class="field wide">位址
+        <span class="inline"><input type="text" id="opt-hand_url" placeholder="192.168.1.50:8765" spellcheck="false" autocomplete="off">
+        <button type="button" id="hand-link">連接</button></span>
+        <small>Raspberry Pi 上「右手操作面板」的位址。這個 APP 以面板的一個控制頁面的身分操作手掌，保護機制都在面板那一側。</small>
+      </label>
+      <label class="check"><input type="checkbox" id="opt-auto_link"> 開啟 APP 時自動連接手掌面板（只讀狀態，不會動）</label>
+      <label class="field">移動速度
+        <select id="opt-speed"><option value="slow">慢</option><option value="normal">中</option><option value="fast">快</option></select>
+        <small>面板的三個速度檔。快速檔下拇指曾經落後超過上限而停下。</small>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>握拳的樣子</legend>
+      <label class="field">握拳姿勢
+        <select id="opt-fist_pose"><option value="builtin">內建（四指彎曲 85°）</option></select>
+        <small>可以選手掌面板上存好的姿勢當作握到底的樣子，例如 stone。</small>
+      </label>
+      <label class="field"><span class="head">握拳幅度 <output data-for="opt-fist_scale"></output></span>
+        <input type="range" id="opt-fist_scale" min="0.2" max="1" step="0.05" data-percent>
+        <small>握到底時，手掌走到握拳姿勢的幾成。</small>
+      </label>
+      <div class="field">跟隨的手指
+        <div class="checks" id="opt-fingers"></div>
+        <small>沒勾選的手指留在張開的位置。</small>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>跟隨的手感</legend>
+      <label class="field">模式
+        <select id="opt-mode"><option value="continuous">連續：握多少、跟多少</option><option value="binary">兩段：只有張開與握拳</option></select>
+      </label>
+      <label class="field"><span class="head">平滑 <output data-for="opt-smoothing"></output></span>
+        <input type="range" id="opt-smoothing" min="0" max="0.9" step="0.05" data-percent>
+        <small>越高越穩、越慢。戒指每秒約回報 10 次。</small>
+      </label>
+      <label class="field"><span class="head">張開的界線 <output data-for="opt-open_margin"></output></span>
+        <input type="range" id="opt-open_margin" min="0" max="0.4" step="0.01" data-percent>
+        <small>握拳程度低於這個值就當作完全張開。</small>
+      </label>
+      <label class="field"><span class="head">握拳到底的界線 <output data-for="opt-fist_margin"></output></span>
+        <input type="range" id="opt-fist_margin" min="0.6" max="1" step="0.01" data-percent>
+        <small>高於這個值就當作握到底，不必每次都握得和校正時一樣緊。</small>
+      </label>
+      <label class="field"><span class="head">最小變化 <output data-for="opt-deadband"></output></span>
+        <input type="range" id="opt-deadband" min="0.01" max="0.2" step="0.01" data-percent>
+        <small>握拳程度變化小於這個值不送給手掌，避免手指抖動。</small>
+      </label>
+      <label class="field"><span class="head">方向偏離容許 <output data-for="opt-off_limit"></output></span>
+        <input type="range" id="opt-off_limit" min="10" max="80" step="5" data-unit="°">
+        <small>手掌方向離開校正時的弧線超過這個角度，就停在上一個位置。</small>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>戒指觸控</legend>
+      <label class="check"><input type="checkbox" id="opt-ring_touch"> 開啟戒指的觸控回報（結束時還原戒指原本的設定）</label>
+      <label class="check"><input type="checkbox" id="opt-tap_confirm"> 校正時，單擊戒指等於按「記錄」與「儲存」</label>
+      <label class="check"><input type="checkbox" id="opt-long_press_stop"> 跟隨中長按戒指：停止</label>
+      <label class="check"><input type="checkbox" id="opt-long_press_start"> 停止時長按戒指：啟動跟隨</label>
+      <small>長按啟動預設關閉：戒指握著東西也可能被當成長按，手掌會在你沒看著的時候動起來。</small>
+    </fieldset>
+  </div>
+</section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

@@ -249,6 +249,24 @@
 - 使用者回報：扭力那一區換字時（移動中／閒置倒數的說明一行與兩行交替、故障與自動關扭力的說明插在最上面、確認啟用時按鈕變寬），整頁會上下跳。改成固定版面：狀態、倒數、說明、按鈕各有固定大小的位置，只換字與顏色；故障與自動關扭力的說明移進這一區；頂列的狀態字固定兩行高，電壓與溫度的數字最多 2 秒換一次，偶發一次的讀值失敗不會讓字閃。在模擬頁面上用 13 種狀態量過（桌面 1280 px、窄版 924 px、手機 375 px）：手指區的位置、扭力區與頂列的高度、按鈕寬度都不變。
 - 尚未做：面板在實機上的故障注入；`handd`／MCP 在 RPi 上只裝了環境，沒有啟動。
 
+## 2026-10-11 — 用戒指握拳控制右手（QRing Hand）
+
+- 使用者要求：用他的 QRing R08 智慧戒指（資料在 [pcpcchen-coder/qringr08plus](https://github.com/pcpcchen-coder/qringr08plus)）的三軸數據控制這隻手，握拳時手跟著握拳；做成裝在他那台 Mac mini 上的 App，要有校正介面、啟動開關、戒指資訊。手仍然接在 RPi 上。決策寫成 [ADR-0008](../docs/adr/0008-qring-fist-operator-control.md)（proposed），說明在 [`control_methods/qring_fist/README.md`](control_methods/qring_fist/README.md)。
+- 做法：
+  - 戒指只有重力方向。校正記「張開」「握拳」兩個方向，之間的弧線換算成握拳程度，再線性內插成四指的彎曲（張開 −30° 到握拳姿勢，預設內建 85°）。固定的幾何換算，沒有模型。
+  - 對手的動作全部經由網頁操作面板既有的 HTTP 介面，身分是一個控制的頁面（心跳、`enable`、`fingers`、`stop`）。**`hand_panel`、`hand_api` 與 RPi 上的東西都沒有改**；落後、電壓、溫度、掉線、到位、閒置、心跳的保護照舊在面板那一側。
+  - App 這一側：啟動要按兩次；啟動前要有新鮮而且有效的握拳讀值、面板沒有 fault、匯流排 attached、8 顆都回應、沒有別的頁面在控制；讀值無效時不送新目標；戒指斷線、App 結束送關扭力；面板關了扭力就跟著停、不自己再啟動；「長按戒指啟動」預設關。
+  - 定位和面板相同：給人用的工具，不是 skill，不是 AI 的控制路徑。
+- 使用者說這是控制手的方法之一，之後還會用雙目相機做另一種。因此開 `control_methods/`，一種方法一個資料夾；共同的界線寫在 [`control_methods/README.md`](control_methods/README.md)。
+- 程式最初寫在戒指 repo 的工作目錄（`hand-app/`），在那裡建置、安裝到 `~/Applications/QRing Hand.app`（0.1.0，ad-hoc 簽章）。之後搬到這個 repo 的 `control_methods/qring_fist/`：App 內的程式檔內容相同；`install.command`、`build_app.py`、`requirements.txt` 依新位置改過（自己的 `.venv`、產物在 `.build.noindex/`），**改過的這三個檔還沒在 Mac 上跑過**。
+- 驗證：
+  - 47 項測試（模擬戒指＋照面板 HTTP 介面做的假面板）在開發環境與那台 Mac 的 Apple Python 3.9 上通過；封裝自我檢查 `BUNDLED_APP_SELF_TEST_OK`；安裝後簽章檢查通過。這些測試不在 `pytest right_hand/tests -q` 裡（相依套件不同）。
+  - 開發環境接上真的 `hand_panel` 程式（模擬 adapter）跑過整條路徑：握拳、張開、來回、閒置逾時後 App 跟著停、結束 App 後扭力關、心跳停掉後面板約 3 秒關扭力。
+  - 寫程式的這一方（AI）在實機上只讀了面板的狀態（`/api/status`）與稽核紀錄（`/api/log`），沒有對實機下過任何動作。
+- 實機使用（使用者操作，10:46–10:47 與 13:31–13:32；依據是面板 `/api/log` 最近 100 筆，bring-up 觀察，沒有 experiment ID）：真的戒指（R08_E703 / RT08_V3.1 / RT08_3.10.48_260309）、中速、連續模式、內建握拳。96 段移動全部到位並停下，沒有 fault；到位後目標與實際的差平均 1.9°、最大 3.8°（768 筆）；握到 85°、張開到 −30° 都走過。3 次關扭力都是按停止，每次 8 顆都關成功。這 100 筆以外的事件沒有看。
+- 看到的問題：App 畫面上戒指的三軸更新率約 4 Hz。現在是送一次快照要求、等回報再送下一次；戒指 repo 的[加速度實測](https://github.com/pcpcchen-coder/qringr08plus/blob/main/docs/2026-10-09-accelerometer-verified.md)用固定每 0.1 秒送一次要求量到約 10 Hz。還沒改。
+- 尚未做：實機上的中止路徑（閒置逾時、fault 鎖定、心跳看門狗、戒指斷線、App 被強制結束、Mac 斷網）；慢速與快速；長時間使用；端到端延遲。
+
 ### 待辦（下一次接手從這裡開始）
 
 收尾：
@@ -276,3 +294,8 @@
 - [ ] 面板在實機上的故障注入：移動中關頁面、拔 USB、切電源、殺面板。
 - [ ] 快速檔下拇指落後 19.3°（上限 19°）那一次：重現看看是起步慢還是被擋住，再決定要不要動速度檔。
 - [ ] `handd`／MCP 要不要搬到 RPi（ADR-0006 的 Revisit 條件「有 Linux robot host」已成立）。
+- [ ] ADR-0008：決定要不要接受。
+- [ ] QRing Hand：三軸更新率約 4 Hz → 改成固定節拍送快照要求，在實機上看能不能到約 10 Hz。
+- [ ] QRing Hand：在實機上觸發各條中止路徑（閒置逾時、fault 鎖定、戒指斷線、強制結束 App、Mac 斷網），並量端到端延遲。
+- [ ] QRing Hand：`control_methods/qring_fist/install.command` 在 Mac 上重跑一次（搬位置後還沒跑過）。
+- [ ] 雙目相機的控制方法（放 `control_methods/`；做法未定）。

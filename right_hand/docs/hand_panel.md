@@ -82,6 +82,8 @@ journalctl --user -u hand-panel -n 50    # 看輸出
 
 面板用和 `servo_tool.py`、`handd` 同一個檔案鎖。**有頁面開著時面板佔著匯流排**，`finger_cal.sh`、`handd --adapter scs` 會回報被占用；關掉頁面 6 秒後放開。反過來，別的工具在跑時，頁面頂列會顯示「序列埠正被另一個程式使用」。
 
+除了瀏覽器頁面，還有一種客戶端會用這一節與 §9 的介面：[`control_methods/qring_fist/`](../control_methods/qring_fist/README.md) 的 QRing Hand（操作者用智慧戒指握拳控制這隻手，[ADR-0008](../../docs/adr/0008-qring-fist-operator-control.md)）。它以「一個控制的頁面」的身分連進來，稽核紀錄裡的呼叫者是 `operator.web:ringhand…`；它連著的時候面板同樣佔著匯流排。它是人操作的工具，§1 的界線照舊：這個介面不得接到任何模型或 agent 上。
+
 ## 8. 資安
 
 - **預設沒有登入這一層。** 區域網路上的明文 HTTP；連得到這台主機 8765 埠的任何裝置（同一個 Wi-Fi 上的電腦、手機、訪客、被入侵的 IoT 裝置）都能操作這隻手。只適合自己的工作台網路，不要做 port forwarding 或放到對外的網路上。只想本機用：`--host 127.0.0.1`，再用 SSH tunnel。
