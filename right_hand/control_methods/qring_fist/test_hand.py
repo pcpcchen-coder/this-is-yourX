@@ -660,6 +660,46 @@ class EngineCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second.options["hand_url"], "http://10.0.0.7:9000")
 
 
+class ShutdownCase(unittest.IsolatedAsyncioTestCase):
+    async def test_close_finishes_while_samples_keep_arriving(self):
+        """回歸：結束時 sender 剛好被新取樣叫醒，取消會被 asyncio.wait_for 吃掉，close() 就永遠不回來。"""
+        for _ in range(25):
+            with tempfile.TemporaryDirectory() as tmp:
+                engine = Engine(tmp, check_studio=False)
+                await engine.start()
+
+                async def hammer():
+                    while True:
+                        engine.kick.set()
+                        await asyncio.sleep(0)
+                task = asyncio.ensure_future(hammer())
+                await asyncio.sleep(0.01)
+                closer = asyncio.ensure_future(engine.close())
+                done, _ = await asyncio.wait({closer}, timeout=6)
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+                if not done:
+                    closer.cancel()
+                    self.fail("engine.close() 沒有在時間內結束")
+                self.assertTrue(engine.worker.done())
+
+    async def test_unlink_finishes_while_the_panel_is_unresponsive(self):
+        panel = FakePanel()
+        url = await panel.start()
+        panel.fail = True
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine(tmp, check_studio=False)
+            await engine.start()
+            await engine.hand_link(url)
+            await asyncio.sleep(0.4)
+            closer = asyncio.ensure_future(engine.close())
+            done, _ = await asyncio.wait({closer}, timeout=6)
+            self.assertTrue(done, "engine.close() 沒有在時間內結束")
+            self.assertIsNone(engine.hand.task)
+            self.assertFalse(engine.hand.state["linked"])
+        await panel.close()
+
+
 class ServerCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()

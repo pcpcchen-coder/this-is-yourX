@@ -210,8 +210,13 @@ class RingLink:
 
     async def disconnect(self):
         self.stop.set()
-        if self.task and not self.task.done():
-            await self.task
+        task = self.task
+        if task and not task.done():
+            # 正常收尾（停止三軸、還原觸控設定）最多幾秒；藍牙卡住時不讓整個 App 的結束跟著卡住
+            _, pending = await asyncio.wait({task}, timeout=10.0)
+            if pending:
+                task.cancel()
+                await asyncio.wait({task}, timeout=3.0)
 
     async def _run(self):
         expected = False

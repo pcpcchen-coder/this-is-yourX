@@ -19,6 +19,22 @@ POSES_PERIOD_S = 10.0
 UNREACHABLE_AFTER = 3          # 連續幾次狀態查詢失敗就當作連不到
 
 
+async def finish_tasks(tasks, timeout=3.0):
+    """等這些 task 結束；逾時就取消，再等一次同樣的時間，然後不管結果都回來。
+
+    刻意不用 gather 或 wait_for：Python 3.9 的 asyncio.wait_for 在「裡面等的東西剛好完成」時會把取消吃掉，
+    被取消的 task 若因此繼續跑，gather 就永遠等不到它（0.1.0 結束時卡住的原因）。
+    """
+    tasks = [t for t in tasks if t is not None and not t.done()]
+    if not tasks:
+        return
+    _, pending = await asyncio.wait(tasks, timeout=timeout)
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.wait(pending, timeout=timeout)
+
+
 def normalize_url(text):
     """接受 192.168.x.x、192.168.x.x:8765、http://主機:埠；回傳 http://主機:埠。"""
     if not isinstance(text, str) or not text.strip():
@@ -54,6 +70,7 @@ class HandLink:
         self.status = None             # 面板最近一次回的狀態（原樣）
         self.status_at = 0.0
         self.failures = 0
+        self.polling = False
         self.poses = []
         self.state = {"linked": False, "reachable": False, "message": "尚未連線", "url": None, "latency_ms": None}
 
@@ -114,14 +131,16 @@ class HandLink:
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2.5))
         self.failures = 0
         self.state.update(linked=True, reachable=False, message="正在連接手掌面板…", url=url)
+        self.polling = True
         self.task = asyncio.ensure_future(self._poll())
         self.log("hand", "開始連接手掌面板 %s" % url)
 
     async def unlink(self):
+        self.polling = False
         task, self.task = self.task, None
         if task:
             task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+            await finish_tasks([task])
         session, self.session = self.session, None
         if session:
             await session.close()
@@ -138,7 +157,7 @@ class HandLink:
 
     async def _poll(self):
         next_poses = 0.0
-        while True:
+        while self.polling:
             began = self.monotonic()
             try:
                 data = await self._get("/api/status?client=" + self.client_id)

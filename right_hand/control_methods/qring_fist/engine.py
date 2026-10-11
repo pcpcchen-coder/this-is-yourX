@@ -22,10 +22,10 @@ from pathlib import Path
 import aiohttp
 
 from follow import BUILTIN_FIST, FINGERS, FINGER_LABELS, CurlFilter, CurlModel, StabilityWindow, finger_targets
-from hand import HandLink, normalize_url
+from hand import HandLink, finish_tasks, normalize_url
 from ring import RingLink
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 RING_NAME = "R08_E703"
 SEND_PERIOD_S = 0.12            # 和面板頁面拖滑桿時的送出間隔相同
 FLEX_SPAN_DEG = 120.0           # 張開 −30° 到握 90°
@@ -149,6 +149,7 @@ class Engine:
         self.arm_lock = asyncio.Lock()
         self.tasks = set()
         self.worker = None
+        self.closing = False
         self.studio = {"running": False, "ring_connected": False}
 
     # ------------------------------------------------------------------ 檔案與紀錄
@@ -198,12 +199,13 @@ class Engine:
             if self.phase in ("starting", "following"):
                 await self.stop("APP 結束，已關掉手掌扭力")
         finally:
-            if self.worker:
-                self.worker.cancel()
-                await asyncio.gather(self.worker, return_exceptions=True)
-            for task in list(self.tasks):
+            self.closing = True                # sender 自己看到旗標就結束；不靠取消
+            self.kick.set()
+            await finish_tasks([self.worker])
+            spawned = list(self.tasks)
+            for task in spawned:
                 task.cancel()
-            await asyncio.gather(*self.tasks, return_exceptions=True)
+            await finish_tasks(spawned)
             await self.ring.disconnect()
             await self.hand.unlink()
             self.log("app", "已結束")
@@ -458,11 +460,14 @@ class Engine:
         return diff > 0.05 and self.filter.output in (0.0, 1.0)
 
     async def _sender(self):
-        while True:
-            try:
-                await asyncio.wait_for(self.kick.wait(), 0.25)
-            except asyncio.TimeoutError:
-                pass
+        while not self.closing:
+            waiter = asyncio.ensure_future(self.kick.wait())
+            try:                               # 不用 wait_for：它會在 kick 剛好被設的時候把取消吃掉
+                await asyncio.wait({waiter}, timeout=0.25)
+            finally:
+                waiter.cancel()
+            if self.closing:
+                break
             self.kick.clear()
             now = self.monotonic()
             self.ring.want_accel = (self.phase in ("starting", "following") or self.cal["active"]

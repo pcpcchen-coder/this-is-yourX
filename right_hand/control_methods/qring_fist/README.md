@@ -1,4 +1,4 @@
-# qring_fist — 用戒指握拳控制右手（QRing Hand 0.1.0）
+# qring_fist — 用戒指握拳控制右手（QRing Hand 0.1.1）
 
 操作者戴著 QRing R08 智慧戒指握拳，Amazing Hand 右手跟著握拳；張開，它跟著張開。
 這是 [`control_methods/`](../README.md) 底下的第一種控制方法。決策見 [ADR-0008](../../../docs/adr/0008-qring-fist-operator-control.md)（proposed）。
@@ -6,16 +6,17 @@
 macOS App（Apple Silicon）「QRing Hand」。戒指用藍牙接在 Mac 上；手接在 Raspberry Pi 上，經由
 [網頁操作面板](../../docs/hand_panel.md)（`right_hand/hand_panel`）的 HTTP 介面控制。面板與 `hand_api` 都沒有改。
 
-> **狀態（2026-10-11）**：已建置並安裝在 George 的 Mac mini（`~/Applications/QRing Hand.app`）。47 項測試全部用模擬戒指與
-> 模擬面板，在開發環境與那台 Mac 的 Apple Python 3.9 上都通過；另外用真的 `hand_panel` 程式（模擬 adapter）跑過整條路徑。
+> **狀態（2026-10-11）**：這裡的原始碼是 **0.1.1**；George 的 Mac mini 上裝的是 **0.1.0**（`~/Applications/QRing Hand.app`）。
 >
-> **實機使用（bring-up 觀察，沒有 experiment ID，不是 real-hardware validation）**：2026-10-11 George 用真的戒指
+> - 0.1.0：47 項測試（模擬戒指＋模擬面板）在開發環境與那台 Mac 的 Apple Python 3.9 上通過，建置、封裝自我檢查、安裝都在那台 Mac 上完成；
+>   另外在開發環境用真的 `hand_panel` 程式（模擬 adapter）跑過整條路徑。
+> - 0.1.1：修掉 0.1.0 結束時可能卡住的問題（見 §9 的說明），加了 2 項回歸測試，共 49 項，在開發環境連跑三次都通過。
+>   **0.1.1 還沒在 Mac 上建置或安裝**；這個資料夾的 `install.command`、`build_app.py`、`requirements.txt`（從戒指 repo 的工作目錄搬過來後依新位置改過）也還沒在 Mac 上跑過。
+>
+> **實機使用（0.1.0；bring-up 觀察，沒有 experiment ID，不是 real-hardware validation）**：2026-10-11 George 用真的戒指
 >（R08_E703 / RT08_V3.1 / RT08_3.10.48_260309）與 Raspberry Pi 上的右手操作了兩段（10:46–10:47、13:31–13:32，中速、連續模式、內建握拳）。
 > 依據是面板的稽核紀錄（`/api/log` 最近 100 筆）：96 段移動全部到位並停下，沒有 fault；到位後目標與實際的差平均 1.9°、最大 3.8°；
 > 握到 85°、張開到 −30° 都走過。手實際的樣子與跟隨的手感只有操作者看過。寫程式的這一方（AI）沒有對實機下過任何動作，只讀了面板的狀態與紀錄。
->
-> 當時安裝的那一份是在戒指 repo 的工作目錄裡建置的；搬到這個資料夾之後，App 內的程式檔（`engine.py`、`follow.py`、`hand.py`、`ring.py`、
-> `server.py`、`sim.py`、`web/`、`native/Hand.swift`）內容相同，但**這裡的 `install.command`、`build_app.py`、`requirements.txt` 還沒有在 Mac 上跑過**。
 >
 > 這次看到的問題：戒指的三軸更新率只有約 4 Hz（預期約 10 Hz），手的動作因此是一段一段跟上。原因與改法見 §9。
 
@@ -151,7 +152,7 @@ zsh right_hand/control_methods/qring_fist/install.command
 | `web/` | 介面（控制、校正、設定），沒有外部資源 |
 | `native/Hand.swift` | AppKit＋WKWebView 容器、選單列、內建服務的啟動與結束 |
 | `build_app.py`、`install.command`、`requirements.txt` | 建置與安裝 |
-| `test_hand.py` | 47 項測試 |
+| `test_hand.py` | 49 項測試 |
 | `site.example.json` | 這台機器的預設面板位址範例；實際的 `site.json` 不進 Git |
 
 ```bash
@@ -167,10 +168,15 @@ cd right_hand/control_methods/qring_fist
 這些測試不在 `pytest right_hand/tests -q` 裡（相依套件不同：這裡要 `aiohttp`，不需要 `rustypot`）。涵蓋：校正模型與邊界（太小的角度差、
 晃動、偏離弧線、超出範圍）、濾波與兩段模式、目標角度不出面板限制、啟動前的每一項條件、握拳跟隨與張開、最小變化與送出頻率、
 讀值無效時不送目標、戒指斷線關扭力、面板放鬆／鎖定／連不到時停止且不自行重啟、停止一律送出、結束時關扭力、戒指觸控
-（單擊確認、長按停止、長按啟動預設關）、設定的檢查與保存、戒指設定還原、沒人看時暫停讀三軸、本機服務的來源檢查。
+（單擊確認、長按停止、長按啟動預設關）、設定的檢查與保存、戒指設定還原、沒人看時暫停讀三軸、本機服務的來源檢查、結束時不會卡住（取樣不斷進來、面板沒有回應）。
 啟動前條件不成立的案例都檢查沒有送出 `enable`。
 
 ## 9. 還沒做、還不知道的
+
+- **0.1.0 結束時可能卡住（0.1.1 已修，Mac 上裝的還是 0.1.0）**。結束 App 時若剛好有新的三軸取樣進來，Python 3.9 的
+  `asyncio.wait_for` 會把「取消送目標的工作」這件事吃掉，收尾就停在那裡。關手掌扭力排在這一步之前，所以扭力仍然會關；
+  但戒指的觸控設定不會還原、三軸輪詢不會送停止，App 要等原生容器的 60 秒逾時才真的結束。這是搬到這裡之後重跑測試時發現的
+  （同一組測試偶爾卡住），不是在實機上看到的；實機上有沒有發生過沒有紀錄。0.1.1 改成用旗標讓工作自己結束，收尾的每一段都有時間上限。
 
 - **三軸更新率約 4 Hz**。現在的做法是送出一次快照要求、等到回報再送下一次；實機上一來一回約 0.25 秒。戒指 repo 的
   [加速度實測](https://github.com/pcpcchen-coder/qringr08plus/blob/main/docs/2026-10-09-accelerometer-verified.md)用固定每 0.1 秒
@@ -179,6 +185,6 @@ cd right_hand/control_methods/qring_fist
 - 實機上連續改目標時，面板的落後檢查目前沒有誤觸發；只看過中速、兩段各約一分鐘。慢速、快速、長時間還沒看過。
 - 閒置逾時、fault 鎖定、心跳看門狗、戒指斷線、App 被強制結束這幾條中止路徑，在實機上都還沒有觸發紀錄（只在模擬上驗證）。
 - 握拳時拇指與其他手指同時合攏的路徑：內建握拳（85°）在實機上走過；其他握拳姿勢與握拳幅度的組合沒有逐一看過。
-- 這個資料夾的建置腳本還沒在 Mac 上跑過（見最上面的狀態）。
+- 0.1.1 與這個資料夾的建置腳本還沒在 Mac 上跑過（見最上面的狀態）。
 - 長時間連線的穩定性與戒指耗電。
 - 固定的實體開關／E-stop（ADR-0006 起就未決，這裡同樣適用）。
