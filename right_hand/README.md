@@ -32,7 +32,7 @@ Amazing Hand 右手版（Seeed Studio 套件，4 指、8-DOF、8 顆 Feetech SCS
 
 **網頁操作面板（ADR-0007，proposed）**：人在瀏覽器上逐指操作、存下與重現姿勢，跑在接著手的那台主機上（2026-10-08 起是一台 Raspberry Pi 4）。133 項測試在假 adapter 與假匯流排上通過。實機上 George 當天操作了約半小時（151 段移動、150 段到位，存了 5 個姿勢），是 bring-up 觀察、沒有 experiment ID；實機上的故障注入還沒做。它是給人用的工具，不是 AI 的控制路徑，預設也沒有登入（只在自己的內網用）。見 [`docs/hand_panel.md`](docs/hand_panel.md)。
 
-**用戒指握拳控制（ADR-0008，proposed）**：操作者戴 QRing R08 智慧戒指握拳，手跟著握拳。一個 macOS App（QRing Hand）讀戒指的三軸加速度，經由網頁操作面板的 HTTP 介面控制這隻手；面板與 `hand_api` 沒有改。52 項測試在模擬戒指與模擬面板上通過；George 的 Mac 上裝的是 0.1.1。2026-10-11 George 用 0.1.0 在實機上操作了兩段（面板稽核紀錄：96 段移動全部到位、沒有 fault），是 bring-up 觀察、沒有 experiment ID；0.1.1 把戒指的三軸更新率從約 4 Hz 拉到約 10–15 Hz，這個版本的跟隨與各條中止路徑在實機上還沒有紀錄。它是給人用的工具，不是 AI 的控制路徑。這類「操作者用某種輸入裝置控制右手」的方法放在 [`control_methods/`](control_methods/README.md)，之後雙目相機的方法也放那裡。見 [`control_methods/qring_fist/README.md`](control_methods/qring_fist/README.md)。
+**用戒指握拳控制（ADR-0008，proposed）**：操作者戴 QRing R08 智慧戒指握拳，手跟著握拳。一個 macOS App（QRing Hand）讀戒指的三軸加速度，經由網頁操作面板的 HTTP 介面控制這隻手；面板與 `hand_api` 沒有改。52 項測試在模擬戒指與模擬面板上通過；George 的 Mac 上裝的是 0.1.1。2026-10-11 George 用 0.1.0 在實機上操作了兩段（面板稽核紀錄：96 段移動全部到位、沒有 fault），是 bring-up 觀察、沒有 experiment ID；0.1.1 把戒指的三軸更新率從約 4 Hz 拉到約 8–15 Hz；同一天 George 用它操作了四段，中速 45 段移動全部到位，快速檔出現過一次 `VOLTAGE_SAG`（ID 1 讀到 3.9 V），面板關扭力並鎖住、App 跟著停下，解除後照常使用。其餘中止路徑在實機上還沒有紀錄。它是給人用的工具，不是 AI 的控制路徑。這類「操作者用某種輸入裝置控制右手」的方法放在 [`control_methods/`](control_methods/README.md)，之後雙目相機的方法也放那裡。見 [`control_methods/qring_fist/README.md`](control_methods/qring_fist/README.md)。
 
 ## 目錄
 
@@ -124,5 +124,5 @@ pytest right_hand/tests -q      # 2026-10-08：148 passed
 2. （選做）量測 USB 外殼之間的電位差，確認變壓器漏電在正常範圍。
 3. 在 Mac mini 上跑 AI 介面 P1／P2（安裝步驟見 `docs/hand_api_design.md` §9），並把 MCP server 登記到 AI 工具。
 4. 補上固定的實體開關／E-stop，再依 ADR-0006 P3 的條件開放實機動作。
-5. 用戒指握拳控制（`control_methods/qring_fist/`）：用 0.1.1（約 10–15 Hz）在實機上跟隨並留下紀錄、觸發各條中止路徑，見該資料夾 README §9。
+5. 用戒指握拳控制（`control_methods/qring_fist/`）：查快速檔下電壓掉到 3.9 V 的原因（供電餘裕或接線）、在實機上觸發其餘中止路徑，見該資料夾 README §9。
 6. 用雙目相機看這隻右手：相機是 Waveshare AR0144 Stereo USB Camera (A)，資料在 [`stereo_camera/`](../stereo_camera/README.md)，決策見 [ADR-0005](../docs/adr/0005-stereo-camera-ar0144.md)。
