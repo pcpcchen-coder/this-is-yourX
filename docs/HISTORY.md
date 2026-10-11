@@ -52,6 +52,30 @@ Amazing Hand 官方資料描述：
 
 若套件未包含可由主機使用的 TTL/serial bus adapter、穩壓電源或實體 E-stop，須先補齊再進行實機動作。
 
+## 2026-10-02 — Amazing Hand 右手到貨，開始 bring-up
+
+### 摘要
+
+Amazing Hand 右手套件（Seeed Studio）已到貨。右手的組裝資料、到貨清點、bring-up 工具與逐日紀錄集中在 [`right_hand/`](../right_hand/README.md)，不與之後的其他元件混放。
+
+### 事實
+
+- 變壓器標示 5V 3A。
+- 已拍照核對五金、線材、驅動板（`Servo Driver Board for XIAO V1.0`）、分線板與伺服機；結構件尚未核對。詳見 [到貨清點](../right_hand/docs/arrival_inspection.md)。
+- 截至 2026-10-03，尚未有任何伺服機上電；沒有 real-hardware validation。
+- bring-up 主機使用 macOS；單軸 bring-up 工具 `right_hand/tools/servo_tool.py` 只在假匯流排上測過。
+
+### 雙目視覺鏡頭
+
+George 於 2026-10-03 回報已購入雙目視覺鏡頭，並提供外盒照片：**Waveshare AR0144 Stereo USB Camera (A)**，SKU 32695。用途是讓系統看得到這隻右手。截至當日尚未開箱實測。
+
+廠商標示：雙 AR0144 global shutter、單眼 1280×720、併排輸出 2560×720、基線 52 mm、USB 2.0 免驅動。規格、取捨與驗收項目見 [ADR-0005](adr/0005-stereo-camera-ar0144.md)（proposed），相機資料放在 [`stereo_camera/`](../stereo_camera/README.md)。
+
+這改變了上方 2026-09-03 的兩項決策，ADR-0005 接受後生效：
+
+- 「視覺來源：既有本地 USB Webcam」改為雙目相機為主，Webcam 為 fallback。
+- 「S1 暫不採購深度相機」：S1 改以被動雙目取得深度；RealSense D405 留作驗證不過時的候選。
+
 ## S1 視覺與自我模型計畫
 
 ### S1 的工程定義

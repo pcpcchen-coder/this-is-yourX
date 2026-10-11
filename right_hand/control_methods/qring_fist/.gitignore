@@ -1,0 +1,5 @@
+.venv/
+.build.noindex/
+__pycache__/
+site.json
+build-install.log

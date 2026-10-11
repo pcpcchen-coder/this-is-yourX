@@ -1,0 +1,316 @@
+# Amazing Hand 右手的 body manifest（ADR-0006）。格式依 schemas/component.schema.json 0.1.0。
+# 伺服機 ID 只出現在 binding.device_identity；semantic ID 不含硬體編號。
+# state_sources 的 source 指向 handd 讀到的值；freshness_ms 是 gateway 判定「新鮮」的上限。
+schema_version: 0.1.0
+robot:
+  id: this_is_yourx.right_hand_rig
+  name: Amazing Hand 右手（Seeed Studio 套件，8 × SCS0009）
+  model_revision: amazing-hand-right-seeed-2026-10
+  root_frame: hand_right_base
+  default_locale: zh-TW
+
+components:
+  - id: hand.right
+    kind: end_effector
+    name: right hand
+    ownership: intrinsic
+    frame_id: hand_right_base
+    aliases:
+      - {locale: zh-TW, value: 右手, reviewed: true}
+      - {locale: zh-TW, value: 手, reviewed: false}
+      - {locale: en, value: right hand, reviewed: true}
+      - {locale: en, value: hand, reviewed: false}
+    capabilities: [read_hand_state, display_gesture]
+
+  - id: hand.right.index
+    kind: link
+    name: right index finger
+    ownership: intrinsic
+    parent_id: hand.right
+    aliases:
+      - {locale: zh-TW, value: 食指, reviewed: true}
+      - {locale: en, value: index finger, reviewed: true}
+    capabilities: [read_finger_state]
+
+  - id: hand.right.index.servo_a
+    kind: actuator
+    name: right index finger servo A
+    ownership: intrinsic
+    parent_id: hand.right.index
+    binding:
+      driver: scs0009_bus
+      device_identity: "scs:1"
+      command_interface: position
+      state_sources:
+        - {name: position_deg, source: "handd:servo/1/position", unit: deg, freshness_ms: 500}
+        - {name: voltage_v, source: "handd:servo/1/voltage", unit: V, freshness_ms: 500}
+        - {name: temperature_c, source: "handd:servo/1/temperature", unit: degC, freshness_ms: 2000}
+    limits:
+      - {name: position_deg, minimum: -95.0, maximum: 95.0, unit: deg}
+      - {name: voltage_v, minimum: 4.0, maximum: 7.4, unit: V}
+      - {name: temperature_c, maximum: 60.0, unit: degC}
+    capabilities: [read_servo_state]
+    safe_state:
+      on_timeout: torque_disable
+      on_fault: torque_disable
+
+  - id: hand.right.index.servo_b
+    kind: actuator
+    name: right index finger servo B
+    ownership: intrinsic
+    parent_id: hand.right.index
+    binding:
+      driver: scs0009_bus
+      device_identity: "scs:2"
+      command_interface: position
+      state_sources:
+        - {name: position_deg, source: "handd:servo/2/position", unit: deg, freshness_ms: 500}
+        - {name: voltage_v, source: "handd:servo/2/voltage", unit: V, freshness_ms: 500}
+        - {name: temperature_c, source: "handd:servo/2/temperature", unit: degC, freshness_ms: 2000}
+    limits:
+      - {name: position_deg, minimum: -95.0, maximum: 95.0, unit: deg}
+      - {name: voltage_v, minimum: 4.0, maximum: 7.4, unit: V}
+      - {name: temperature_c, maximum: 60.0, unit: degC}
+    capabilities: [read_servo_state]
+    safe_state:
+      on_timeout: torque_disable
+      on_fault: torque_disable
+
+  - id: hand.right.middle
+    kind: link
+    name: right middle finger
+    ownership: intrinsic
+    parent_id: hand.right
+    aliases:
+      - {locale: zh-TW, value: 中指, reviewed: true}
+      - {locale: en, value: middle finger, reviewed: true}
+    capabilities: [read_finger_state]
+
+  - id: hand.right.middle.servo_a
+    kind: actuator
+    name: right middle finger servo A
+    ownership: intrinsic
+    parent_id: hand.right.middle
+    binding:
+      driver: scs0009_bus
+      device_identity: "scs:3"
+      command_interface: position
+      state_sources:
+        - {name: position_deg, source: "handd:servo/3/position", unit: deg, freshness_ms: 500}
+        - {name: voltage_v, source: "handd:servo/3/voltage", unit: V, freshness_ms: 500}
+        - {name: temperature_c, source: "handd:servo/3/temperature", unit: degC, freshness_ms: 2000}
+    limits:
+      - {name: position_deg, minimum: -95.0, maximum: 95.0, unit: deg}
+      - {name: voltage_v, minimum: 4.0, maximum: 7.4, unit: V}
+      - {name: temperature_c, maximum: 60.0, unit: degC}
+    capabilities: [read_servo_state]
+    safe_state:
+      on_timeout: torque_disable
+      on_fault: torque_disable
+
+  - id: hand.right.middle.servo_b
+    kind: actuator
+    name: right middle finger servo B
+    ownership: intrinsic
+    parent_id: hand.right.middle
+    binding:
+      driver: scs0009_bus
+      device_identity: "scs:4"
+      command_interface: position
+      state_sources:
+        - {name: position_deg, source: "handd:servo/4/position", unit: deg, freshness_ms: 500}
+        - {name: voltage_v, source: "handd:servo/4/voltage", unit: V, freshness_ms: 500}
+        - {name: temperature_c, source: "handd:servo/4/temperature", unit: degC, freshness_ms: 2000}
+    limits:
+      - {name: position_deg, minimum: -95.0, maximum: 95.0, unit: deg}
+      - {name: voltage_v, minimum: 4.0, maximum: 7.4, unit: V}
+      - {name: temperature_c, maximum: 60.0, unit: degC}
+    capabilities: [read_servo_state]
+    safe_state:
+      on_timeout: torque_disable
+      on_fault: torque_disable
+
+  - id: hand.right.ring
+    kind: link
+    name: right ring finger
+    ownership: intrinsic
+    parent_id: hand.right
+    aliases:
+      - {locale: zh-TW, value: 無名指, reviewed: true}
+      - {locale: en, value: ring finger, reviewed: true}
+    capabilities: [read_finger_state]
+
+  - id: hand.right.ring.servo_a
+    kind: actuator
+    name: right ring finger servo A
+    ownership: intrinsic
+    parent_id: hand.right.ring
+    binding:
+      driver: scs0009_bus
+      device_identity: "scs:5"
+      command_interface: position
+      state_sources:
+        - {name: position_deg, source: "handd:servo/5/position", unit: deg, freshness_ms: 500}
+        - {name: voltage_v, source: "handd:servo/5/voltage", unit: V, freshness_ms: 500}
+        - {name: temperature_c, source: "handd:servo/5/temperature", unit: degC, freshness_ms: 2000}
+    limits:
+      - {name: position_deg, minimum: -95.0, maximum: 95.0, unit: deg}
+      - {name: voltage_v, minimum: 4.0, maximum: 7.4, unit: V}
+      - {name: temperature_c, maximum: 60.0, unit: degC}
+    capabilities: [read_servo_state]
+    safe_state:
+      on_timeout: torque_disable
+      on_fault: torque_disable
+
+  - id: hand.right.ring.servo_b
+    kind: actuator
+    name: right ring finger servo B
+    ownership: intrinsic
+    parent_id: hand.right.ring
+    binding:
+      driver: scs0009_bus
+      device_identity: "scs:6"
+      command_interface: position
+      state_sources:
+        - {name: position_deg, source: "handd:servo/6/position", unit: deg, freshness_ms: 500}
+        - {name: voltage_v, source: "handd:servo/6/voltage", unit: V, freshness_ms: 500}
+        - {name: temperature_c, source: "handd:servo/6/temperature", unit: degC, freshness_ms: 2000}
+    limits:
+      - {name: position_deg, minimum: -95.0, maximum: 95.0, unit: deg}
+      - {name: voltage_v, minimum: 4.0, maximum: 7.4, unit: V}
+      - {name: temperature_c, maximum: 60.0, unit: degC}
+    capabilities: [read_servo_state]
+    safe_state:
+      on_timeout: torque_disable
+      on_fault: torque_disable
+
+  - id: hand.right.thumb
+    kind: link
+    name: right thumb
+    ownership: intrinsic
+    parent_id: hand.right
+    aliases:
+      - {locale: zh-TW, value: 拇指, reviewed: true}
+      - {locale: en, value: thumb, reviewed: true}
+    capabilities: [read_finger_state]
+
+  - id: hand.right.thumb.servo_a
+    kind: actuator
+    name: right thumb servo A
+    ownership: intrinsic
+    parent_id: hand.right.thumb
+    binding:
+      driver: scs0009_bus
+      device_identity: "scs:7"
+      command_interface: position
+      state_sources:
+        - {name: position_deg, source: "handd:servo/7/position", unit: deg, freshness_ms: 500}
+        - {name: voltage_v, source: "handd:servo/7/voltage", unit: V, freshness_ms: 500}
+        - {name: temperature_c, source: "handd:servo/7/temperature", unit: degC, freshness_ms: 2000}
+    limits:
+      - {name: position_deg, minimum: -95.0, maximum: 95.0, unit: deg}
+      - {name: voltage_v, minimum: 4.0, maximum: 7.4, unit: V}
+      - {name: temperature_c, maximum: 60.0, unit: degC}
+    capabilities: [read_servo_state]
+    safe_state:
+      on_timeout: torque_disable
+      on_fault: torque_disable
+
+  - id: hand.right.thumb.servo_b
+    kind: actuator
+    name: right thumb servo B
+    ownership: intrinsic
+    parent_id: hand.right.thumb
+    binding:
+      driver: scs0009_bus
+      device_identity: "scs:8"
+      command_interface: position
+      state_sources:
+        - {name: position_deg, source: "handd:servo/8/position", unit: deg, freshness_ms: 500}
+        - {name: voltage_v, source: "handd:servo/8/voltage", unit: V, freshness_ms: 500}
+        - {name: temperature_c, source: "handd:servo/8/temperature", unit: degC, freshness_ms: 2000}
+    limits:
+      - {name: position_deg, minimum: -95.0, maximum: 95.0, unit: deg}
+      - {name: voltage_v, minimum: 4.0, maximum: 7.4, unit: V}
+      - {name: temperature_c, maximum: 60.0, unit: degC}
+    capabilities: [read_servo_state]
+    safe_state:
+      on_timeout: torque_disable
+      on_fault: torque_disable
+
+  - id: power.servo_rail
+    kind: power
+    name: 5 V servo rail
+    ownership: intrinsic
+    parent_id: hand.right
+    aliases:
+      - {locale: zh-TW, value: 伺服機電源, reviewed: true}
+    binding:
+      driver: scs0009_bus
+      device_identity: "inferred:servo_voltage"
+      state_sources:
+        - {name: up, source: "handd:rail", unit: boolean, freshness_ms: 500}
+    capabilities: [rail_state_observation]
+    safe_state:
+      on_timeout: reject_motion
+      on_fault: reject_motion
+
+  - id: safety.estop
+    kind: safety
+    name: servo rail power switch
+    ownership: intrinsic
+    parent_id: hand.right
+    aliases:
+      - {locale: zh-TW, value: 電源開關, reviewed: true}
+      - {locale: zh-TW, value: 緊急停止, reviewed: false}
+    binding:
+      driver: manual
+      device_identity: "manual:servo_rail_switch"
+    capabilities: [manual_power_cut]
+
+skills:
+  - name: hand_stop
+    version: 1.0.0
+    authority_level: A0
+    target_kinds: [end_effector]
+    requires_approval: false
+    timeout_s: 2.0
+
+  - name: hand_open
+    version: 1.0.0
+    authority_level: A2
+    target_kinds: [end_effector]
+    requires_approval: true
+    timeout_s: 20.0
+    preconditions:
+      - approval.valid == true
+      - fault.active == false
+      - power.servo_rail.up == true
+      - every servo responding, state_age_ms < 500
+      - every servo voltage_v within limits
+      - every servo temperature_c within limits
+
+  - name: hand_gesture
+    version: 1.0.0
+    authority_level: A2
+    target_kinds: [end_effector]
+    requires_approval: true
+    timeout_s: 45.0
+    parameter_limits:
+      hold_s: {minimum: 0.5, maximum: 30.0}
+    preconditions:
+      - approval.valid == true
+      - fault.active == false
+      - gesture.status == confirmed
+      - gesture.calibration_revision == calibration.revision
+      - power.servo_rail.up == true
+      - every servo responding, state_age_ms < 500
+      - every servo voltage_v within limits
+      - every servo temperature_c within limits
+
+policies:
+  default_authority: A0
+  unknown_precondition: reject
+  stale_state: reject
+  ambiguous_component: ask_user
+  ai_direct_driver_access: deny
