@@ -1,0 +1,7 @@
+# macOS（Apple Silicon）、Apple Python 3.9。版本與 qringr08plus 的 requirements.txt 相同（少了這個 App 用不到的 Quartz）。
+bleak==1.1.1
+pyobjc-core==11.1
+pyobjc-framework-Cocoa==11.1
+pyobjc-framework-CoreBluetooth==11.1
+pyobjc-framework-libdispatch==11.1
+aiohttp==3.13.5

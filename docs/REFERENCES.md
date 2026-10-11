@@ -40,6 +40,17 @@
 - [ROS 2 v4l2_camera](https://index.ros.org/r/v4l2_camera/)：V4L2 camera controls、image transport 與 ROS 2 介面。
 - [micro-ROS setup](https://github.com/micro-ROS/micro_ros_setup)：ROS 2 與 microcontroller build/integration 支援。
 
+## Amazing Hand 的現有軟體（查核日期：2026-10-08）
+
+用於 [ADR-0006](adr/0006-hand-skill-api-mcp.md) 的調查。星數與 commit 數是當天頁面上的數字。
+
+- [pollen-robotics/AmazingHand](https://github.com/pollen-robotics/AmazingHand)：官方 repo，Python／Arduino 範例與 Demo；軟體 Apache-2.0、機構 CC BY 4.0。
+- [Seeed Studio wiki：Amazing Hand](https://wiki.seeedstudio.com/hand_amazinghand/)：套件說明、rustypot 控制腳本、MediaPipe 手部追蹤與應變規範例。
+- [Betatester777/AmazingHandControl](https://github.com/Betatester777/AmazingHandControl)：Tkinter GUI 與 CLI，具名 pose、sequence、遙測。
+- [CRAZY0921/AmazingHand_ROS2](https://github.com/CRAZY0921/AmazingHand_ROS2)：ROS 2 套件與 Paxini 觸覺感測器整合。
+- [Juxi-Rui/Lerobot-AmazingHand](https://github.com/Juxi-Rui/Lerobot-AmazingHand)：LeRobot fork，SO-ARM101 加 Amazing Hand。
+- [Claude Code：連接 MCP server](https://code.claude.com/docs/en/mcp)：本機 stdio server 的登記語法與範圍。
+
 ## 本專案如何使用這些技術
 
 - URDF/TF2 解決幾何 body schema，但不包含完整語意身份、evidence、confidence 或 ownership，因此本專案增加 manifest/body graph。
