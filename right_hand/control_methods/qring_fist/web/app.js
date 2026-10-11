@@ -336,7 +336,7 @@
 
   // ────────────────────────────────────────────────── 設定
   const OPTION_IDS = ["auto_link", "speed", "fist_pose", "fist_scale", "mode", "smoothing", "open_margin", "fist_margin",
-                      "deadband", "off_limit", "ring_touch", "tap_confirm", "long_press_stop", "long_press_start"];
+                      "deadband", "off_limit", "poll_mode", "ring_touch", "tap_confirm", "long_press_stop", "long_press_start"];
   function labelFor(input) {
     const out = document.querySelector('output[data-for="' + input.id + '"]');
     if (!out) return;

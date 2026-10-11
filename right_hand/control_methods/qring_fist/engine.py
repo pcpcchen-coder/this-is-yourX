@@ -23,7 +23,7 @@ import aiohttp
 
 from follow import BUILTIN_FIST, FINGERS, FINGER_LABELS, CurlFilter, CurlModel, StabilityWindow, finger_targets
 from hand import HandLink, finish_tasks, normalize_url
-from ring import RingLink
+from ring import POLL_MODES, RingLink
 
 VERSION = "0.1.1"
 RING_NAME = "R08_E703"
@@ -40,6 +40,7 @@ DEFAULTS = {
     "fist_pose": "builtin", "fist_scale": 1.0,
     "fingers": {name: True for name in FINGERS},
     "ring_touch": True, "long_press_stop": True, "long_press_start": False, "tap_confirm": True,
+    "poll_mode": "fixed",
 }
 NUMBER_LIMITS = {"smoothing": (0.0, 0.9), "open_margin": (0.0, 0.4), "fist_margin": (0.6, 1.0),
                  "off_limit": (10.0, 80.0), "deadband": (0.01, 0.2), "fist_scale": (0.2, 1.0)}
@@ -82,6 +83,8 @@ def clean_options(saved):
         out["speed"] = saved["speed"]
     if saved.get("mode") in ("continuous", "binary"):
         out["mode"] = saved["mode"]
+    if saved.get("poll_mode") in POLL_MODES:
+        out["poll_mode"] = saved["poll_mode"]
     if isinstance(saved.get("fist_pose"), str) and 0 < len(saved["fist_pose"]) <= 40:
         out["fist_pose"] = saved["fist_pose"]
     if isinstance(saved.get("fingers"), dict):
@@ -473,6 +476,7 @@ class Engine:
             self.ring.want_accel = (self.phase in ("starting", "following") or self.cal["active"]
                                     or now - self.ui_seen < UI_SAMPLING_KEEP_S or now < self.sample_until)
             self.ring.want_touch = self.options["ring_touch"]
+            self.ring.poll_mode = self.options["poll_mode"]
             if self.phase != "following" or self.targets is None or not self.curl.get("valid"):
                 continue
             wait = SEND_PERIOD_S - (self.monotonic() - self.sent_at)
@@ -603,6 +607,10 @@ class Engine:
             elif key == "mode":
                 if value not in ("continuous", "binary"):
                     raise ValueError("模式只能是連續或兩段")
+                new[key] = value
+            elif key == "poll_mode":
+                if value not in POLL_MODES:
+                    raise ValueError("三軸讀取方式只能是固定節拍或等回報")
                 new[key] = value
             elif key == "fist_pose":
                 if not isinstance(value, str) or not 0 < len(value) <= 40:

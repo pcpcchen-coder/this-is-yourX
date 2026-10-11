@@ -255,6 +255,7 @@ class EngineCase(unittest.IsolatedAsyncioTestCase):
         self.engine = Engine(self.folder, ring_transport_factory=lambda: self.fake, check_studio=False)
         self.engine.window = StabilityWindow(seconds=0.8, min_samples=4, min_span_s=0.3)
         self.engine.ring.accel_interval = 0.02
+        self.engine.ring.request_period = 0.02
         await self.engine.start()
 
     async def asyncTearDown(self):
@@ -618,7 +619,8 @@ class EngineCase(unittest.IsolatedAsyncioTestCase):
     async def test_options_are_validated_and_persisted(self):
         for bad in ({"speed": "warp"}, {"smoothing": 2}, {"unknown": 1}, {"fingers": {"toe": True}},
                     {"fingers": {"thumb": False, "index": False, "middle": False, "ring": False}},
-                    {"open_margin": 0.4, "fist_margin": 0.55}, {"deadband": True}, {"hand_url": "ftp://x"}, {}):
+                    {"open_margin": 0.4, "fist_margin": 0.55}, {"deadband": True}, {"hand_url": "ftp://x"},
+                    {"poll_mode": "turbo"}, {}):
             with self.assertRaises(ValueError, msg=str(bad)):
                 self.engine.set_options(bad)
         self.engine.set_options({"speed": "fast", "smoothing": 0.2, "fingers": {"ring": False}})
@@ -642,6 +644,46 @@ class EngineCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(frames[-1], pack(0x3B, b"\x01\x00"))
         self.assertEqual(self.fake.touch[3:5], [0, 0])
         self.assertFalse(self.engine.ring.state["connected"])
+
+    async def test_fixed_cadence_requests_do_not_wait_for_the_ring(self):
+        self.engine.ring.request_period = 0.1
+        self.fake.reply_delay = 0.19                    # 實機上一來一回大約這麼久
+        await self.watch()
+        await self.engine.ring_connect()
+        await self.until(lambda: self.engine.ring.state["raw"] is not None)
+        await asyncio.sleep(1.2)
+        self.assertEqual(self.engine.options["poll_mode"], "fixed")
+        fixed = self.engine.ring.snapshot()["rate_hz"]
+        self.assertGreater(fixed, 8.0)
+        self.assertLess(fixed, 12.0)
+
+    async def test_wait_mode_keeps_the_request_then_wait_behaviour(self):
+        self.engine.set_options({"poll_mode": "wait"})
+        self.engine.ring.accel_interval = 0.06
+        self.fake.reply_delay = 0.19
+        await self.watch()
+        await self.engine.ring_connect()
+        await self.until(lambda: self.engine.ring.state["raw"] is not None)
+        await asyncio.sleep(3.4)
+        waited = self.engine.ring.snapshot()["rate_hz"]
+        self.assertLess(waited, 5.0)                    # 一來一回 0.19 秒 + 停 0.06 秒 ≈ 4 Hz
+        self.assertGreater(waited, 2.5)
+
+    async def test_fixed_cadence_slows_down_when_the_ring_stops_answering(self):
+        self.engine.ring.request_period = 0.05
+        await self.watch()
+        await self.engine.ring_connect()
+        await self.until(lambda: self.engine.ring.state["raw"] is not None)
+        self.fake.silent = True
+        await asyncio.sleep(1.3)                        # 超過 QUIET_AFTER_S
+        request = pack(0xA1, b"\x03")
+        before = self.fake.writes.count(request)
+        await asyncio.sleep(2.0)
+        sent = self.fake.writes.count(request) - before
+        self.assertLessEqual(sent, 6, "戒指不回時還在全速送要求")
+        self.assertGreaterEqual(sent, 2, "戒指不回時完全不送了，恢復後接不上")
+        self.fake.silent = False
+        await self.until(lambda: self.engine.ring.fresh(0.3), message="戒指恢復回報後沒有接上")
 
     async def test_sampling_stops_when_nobody_is_watching(self):
         await self.engine.ring_connect()

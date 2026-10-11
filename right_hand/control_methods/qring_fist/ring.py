@@ -18,7 +18,12 @@ GATT_FIELDS = (("hardware", "00002a27-0000-1000-8000-00805f9b34fb"),
                ("firmware", "00002a26-0000-1000-8000-00805f9b34fb"),
                ("serial", "00002a25-0000-1000-8000-00805f9b34fb"))
 GESTURES = {1: "上滑", 2: "下滑", 3: "單擊", 4: "長按"}
-SAMPLE_WAIT_S = 0.3
+SAMPLE_WAIT_S = 0.3             # 「等回報」模式：一次要求最多等這麼久
+WAIT_GAP_S = 0.06               # 「等回報」模式：收到回報後再停這麼久（0.1.0 的做法，實機約 4 Hz）
+REQUEST_PERIOD_S = 0.1          # 「固定節拍」模式：每隔這麼久送一次快照要求，不等回報
+QUIET_AFTER_S = 1.0             # 固定節拍下這麼久沒收到回報，就先放慢要求，免得寫入一直堆著
+QUIET_PERIOD_S = 0.5
+POLL_MODES = ("fixed", "wait")
 BATTERY_PERIOD_S = 120.0
 
 
@@ -109,7 +114,9 @@ class RingLink:
         self.sample = asyncio.Event()
         self.want_accel = False
         self.want_touch = True
-        self.accel_interval = 0.06
+        self.poll_mode = "fixed"
+        self.request_period = REQUEST_PERIOD_S
+        self.accel_interval = WAIT_GAP_S
         self.touch_original = None
         self.touch_on = False
         self.times = deque(maxlen=64)
@@ -264,6 +271,7 @@ class RingLink:
 
     async def _poll(self):
         had_accel = False
+        requesting_since = 0.0
         touch_failed = False
         next_battery = self.monotonic() + BATTERY_PERIOD_S
         while not self.stop.is_set() and self.transport.connected:
@@ -276,7 +284,7 @@ class RingLink:
             if self.monotonic() >= next_battery:
                 await self.send(3, timeout=1.0)
                 next_battery = self.monotonic() + BATTERY_PERIOD_S
-            if self.want_accel:
+            if self.want_accel and self.poll_mode == "wait":
                 self.sample.clear()
                 await self.send(0xA1, b"\x03", reply=False)
                 try:
@@ -285,6 +293,16 @@ class RingLink:
                     pass
                 had_accel = True
                 await self._sleep(self.accel_interval)
+            elif self.want_accel:
+                # 固定節拍：戒指 repo 的加速度實測就是這樣送，量到約 10 Hz。回報由通知各自進來，不和要求配對。
+                began = self.monotonic()
+                if not had_accel:
+                    requesting_since = began
+                await self.send(0xA1, b"\x03", reply=False)
+                had_accel = True
+                quiet = began - max(self.last_sample, requesting_since) > QUIET_AFTER_S
+                period = max(self.request_period, QUIET_PERIOD_S) if quiet else self.request_period
+                await self._sleep(max(0.005, period - (self.monotonic() - began)))
             else:
                 if had_accel:
                     await self.send(0xA1, b"\x00", reply=False)

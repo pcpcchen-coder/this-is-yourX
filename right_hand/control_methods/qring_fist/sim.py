@@ -31,6 +31,7 @@ class FakeRingTransport:
         self.twist = 0.0                # 離開弧線平面的角度（度），模擬轉手腕
         self.magnitude = 1.0
         self.silent = False             # True：不回三軸（模擬資料中斷）
+        self.reply_delay = 0.0          # 三軸回報晚這麼久才到（模擬藍牙的一來一回）
         self.touch = [0x3B, 1, 0, 0, 0]
         self.reporting = False
         self.writes = []
@@ -47,6 +48,10 @@ class FakeRingTransport:
     def _emit(self, frame):
         if self.connected and self.on_frame:
             asyncio.get_running_loop().call_soon(self.on_frame, frame)
+
+    def _emit_now(self, frame):
+        if self.connected and self.on_frame:
+            self.on_frame(frame)
 
     def vector(self):
         curl = self.curl
@@ -89,4 +94,8 @@ class FakeRingTransport:
                     self.touch[3], self.touch[4] = payload[2], payload[3]
                 self._emit(pack(0x3B, bytes(payload[:4])))
         elif op == 0xA1 and payload[0] == 3 and not self.silent:
-            self._emit(pack(0xA1, b"\x03" + struct.pack(">hhh", *self.vector())))
+            frame = pack(0xA1, b"\x03" + struct.pack(">hhh", *self.vector()))
+            if self.reply_delay:
+                asyncio.get_running_loop().call_later(self.reply_delay, self._emit_now, frame)
+            else:
+                self._emit(frame)
