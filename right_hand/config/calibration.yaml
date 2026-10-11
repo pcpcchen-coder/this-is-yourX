@@ -1,0 +1,6 @@
+# 這隻右手的校正值。改了任何一個值，就要改 revision；手勢表裡 calibration_revision 不同的手勢會被拒絕，
+# 直到人重新確認。
+revision: "2026-10-07.r1"
+hand: hand.right
+# 中位修正（度），ID 1–8。2026-10-07 逐指校正結果全部為 0（見 right_hand/BUILD_LOG.md）。
+middle_offset_deg: {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0}

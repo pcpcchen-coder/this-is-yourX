@@ -29,10 +29,14 @@
 都檢查有沒有哪一顆跟不上、電壓有沒有掉。
 執行 `hand`、`gesture` 時，人要能隨手切斷伺服機電源（例如變壓器接在有開關的延長線上）。
 """
+import fcntl
 import glob
 import math
+import os
+import re
 import select
 import sys
+import tempfile
 import time
 
 BAUD = 1_000_000
@@ -92,9 +96,38 @@ GESTURES = {
 }
 
 
+def bus_lock_path(port):
+    """和 hand_api.adapter.bus_lock_path 相同（有測試確認）。handd 開同一個埠前也會拿這個鎖。"""
+    real = os.path.realpath(port)
+    name = os.path.basename(real)
+    for prefix in ("cu.", "tty."):          # macOS：/dev/cu.X 與 /dev/tty.X 是同一個裝置
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+            break
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", name) or "bus"
+    return os.path.join(tempfile.gettempdir(), "this-is-yourx-bus-%s.lock" % name)
+
+
+_BUS_LOCKS = {}   # {鎖檔路徑: fd}；程式結束時由作業系統釋放
+
+
+def _hold_bus_lock(port):
+    path = bus_lock_path(port)
+    if path in _BUS_LOCKS:
+        return
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        raise RuntimeError("序列埠 %s 正被另一個程式使用（多半是 handd）。先在 handd 的終端機按 Ctrl-C 停掉它。" % port)
+    _BUS_LOCKS[path] = fd
+
+
 def open_bus(port):
     from rustypot import Scs0009PyController
 
+    _hold_bus_lock(port)
     return Scs0009PyController(serial_port=port, baudrate=BAUD, timeout=0.5)
 
 

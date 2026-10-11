@@ -204,6 +204,82 @@
   - `fast` 下拇指 ID 7 被要求的速度約 240°/s，伺服機速度上限設在約 258°/s，已經很接近，表裡不再加更快的選項。
   - `normal` 有沒有跑過，這張畫面看不出來。
 
+## 2026-10-08 — AI 介面：現有工具調查與設計
+
+- 使用者要求：找 GitHub 上有沒有這隻手的 API 工具；沒有的話設計一套，讓 AI 之後可以在對話中控制這隻手。
+- 調查結果（網頁搜尋加逐一開專案頁；這個工作階段不能用 GitHub 搜尋 API，可能有漏）：
+  - 官方 `pollen-robotics/AmazingHand`：示範腳本與 Demo，不是 API。
+  - `Betatester777/AmazingHandControl`：GUI 加 CLI，有具名 pose 與 sequence，最接近可重用的控制層，但沒有 agent 介面或授權。
+  - `CRAZY0921/AmazingHand_ROS2`、`Juxi-Rui/Lerobot-AmazingHand`：ROS 2 套件與 LeRobot fork，都很早期，目標不同。
+  - 沒有找到給 Amazing Hand 用的 MCP server 或其他 agent 介面。
+- 設計寫成 [ADR-0006](../docs/adr/0006-hand-skill-api-mcp.md)（proposed）與 [`docs/hand_api_design.md`](docs/hand_api_design.md)：hardware adapter（真／假）、skill gateway 常駐程式 `handd`、MCP 介面卡、操作者 CLI；AI 只能從已校正的手勢表選名字、速度檔、停留秒數；授權是實體開關加上本機開啟的有期限 session。
+- 這一天只有文件，沒有新增程式，也沒有實機動作。`pytest right_hand/tests -q` → 69 passed（未變）。
+
+- 使用者問要怎麼讓 AI 直接操作這隻手。回覆：AI 介面還沒做，做好後在同一個對話（Claude 桌面 app 登記本機 MCP server）或 Mac mini 上的 Claude Code 都能用。使用者決定：**先做到模擬可動（P1＋P2）**、**授權採每個動作都核准**（不採原本建議的有期限 session）。ADR-0006 改為 accepted 並記下決定。
+- 實作 `hand_api`（P1＋P2）：
+  - `config/body.yaml`（15 個元件，通過 `schemas/component.schema.json` 0.1.0，沒有改 schema）、`calibration.yaml`（revision `2026-10-07.r1`，中位修正全 0）、`gestures.yaml`（只有 `ok`）。
+  - `hand_api/adapter.py`：真 adapter（rustypot，每次操作才開埠）與假 adapter（可注入卡住、斷線、電壓、溫度、過期讀值）；和 `servo_tool.py` 共用匯流排檔案鎖。
+  - `hand_api/motion.py`：四指同時移動與檢查，移植自 `servo_tool.py`，有測試確認角度與速度檔一致。
+  - `hand_api/gateway.py`：參數驗證、前置條件（fail closed）、逐次核准（60 秒、單次、綁參數雜湊）、fault 鎖、速率限制、idempotency、停止、JSONL 稽核；真硬體一律 `REAL_MOTION_NOT_ENABLED`。
+  - `hand_api/daemon.py`（handd，`ai.sock`／`operator.sock` 分流）、`cli.py`（`hand`）、`mcp_server.py`（9 個 tool，沒有核准工具、沒有角度參數）。
+  - `tools/servo_tool.py` 的 `open_bus` 加上同一個匯流排鎖：handd 正在讀時，bring-up 工具會拒絕開埠並說明原因。
+  - 相依套件加 `pyyaml>=6`、`mcp>=2.2,<3`。
+- 驗證（開發機，沒有硬體）：`pytest right_hand/tests -q` → 137 passed（新增 68 項；審查修正後見下一條）。逐一拿掉核准檢查、狀態檢查、落後檢查、AI socket 的核准限制、真硬體限制、結束關扭力、單次核准，各自都有測試失敗。另以真實程序跑過一次端到端：handd（模擬）＋ `tools/hand_mcp.py`（stdio）＋ 操作者 socket 核准 → succeeded。`pyflakes` 無警告。
+- 另開一個沒看過實作過程的 agent 做安全審查：沒有找到能讓實機動起來或讓 AI 端核准的路徑；找到 9 個問題並全部修正——停止在「檢查前置條件」那一瞬間送到時會被漏掉（改成停止序號）、執行緒起不來或稽核寫不進去時匯流排鎖不會釋放、NaN 溫度能通過檢查、同時開兩個 handd 會搶 socket、`/dev/cu.` 與 `/dev/tty.` 拿到不同的匯流排鎖、到位確認時不理取消、連線沒有逾時。補了 11 項回歸測試，其中 7 項在修正前的程式上會失敗。`pytest right_hand/tests -q` → 148 passed。
+- 尚未做：在 Mac mini 上安裝與實測、登記到 Claude 桌面 app、真 adapter 的只讀實測（`--adapter scs`）、「執行中殺掉 handd」的自動化測試。
+
+## 2026-10-08 — 手移到 Raspberry Pi 4；網頁操作面板
+
+- 使用者把驅動板改接到內網的一台 Raspberry Pi 4（Model B Rev 1.5、2 GB、Debian 13、Python 3.13.5），要求把環境裝好。在 RPi 上 clone 本 repo、建 `.venv`、裝 `requirements.txt`，沒有用到 sudo：rustypot 是 1.11.0（Mac 上是 1.10.0）；驅動板是 `/dev/ttyACM0`（USB `1a86:55d3`），使用者帳號已在 `dialout` 群組。`pytest right_hand/tests -q` → 148 passed；`servo_tool.py scan` 回報 ID 1–8 都是 SCS0009（只讀）。
+- 使用者要求：在這台 RPi 上做一個可以逐指控制、把姿勢存下來供之後重現的網頁。做成 `hand_panel/`，決策寫成 [ADR-0007](../docs/adr/0007-hand-operator-web-panel.md)（proposed），說明在 [`docs/hand_panel.md`](docs/hand_panel.md)：
+  - 定位和 `servo_tool.py` 相同：給人用的工作台工具，不是 skill，也不是 AI 的控制路徑。`hand_api` 的 gateway 沒有改；`config/poses.yaml` 不被 `hand_api` 讀取。
+  - `hand_panel/core.py`：一條 worker 執行緒獨占 adapter，沿用 `hand_api.adapter`（含匯流排鎖）與 `hand_api.motion.move_together`。啟動不寫入；啟用扭力前先把目標設成目前位置；一次只有一個頁面能控制；控制的頁面 3 秒沒回報、閒置 60 秒、任何檢查沒過都關扭力，後者鎖住 fault。沒有頁面開著時不佔匯流排。
+  - `hand_panel/poses.py`：`poses.yaml` 的讀寫（整檔替換；格式或範圍不對就拒絕讀寫、不覆蓋）。姿勢記下校正版本，校正改了要重新確認。
+  - `hand_panel/server.py`：標準函式庫的 HTTP 伺服器；`hand_panel/static/`：頁面，沒有外部資源。`hand_panel/safe_off.py`：面板被強制結束後由 systemd 補送關扭力。
+  - 每根手指兩個量：彎曲 −30° 到 +90°、側擺 ±40°，兩顆伺服機各自在 ±90°（含中位修正 ±95°）以內。
+- 部署在 RPi：systemd 使用者服務 `hand-panel`（`tools/hand-panel.service`，8765 埠，`--adapter scs`）。已啟動，沒有設成開機自動啟動。
+- 最初的版本要一組存取碼。使用者決定拿掉，理由是只在自己的內網使用。改成預設不需要、保留 `--require-token`；不論有沒有存取碼，跨站的 POST 與用別的主機名稱送來的請求都拒絕。同網段上連得到這個埠的裝置都能操作這隻手，這一點記在 ADR-0007 的 Consequences。
+- 驗證：`pytest right_hand/tests -q` → 281 passed（新增 133 項，全部在假 adapter 或假匯流排上）。寫程式的這一方（AI）在實機上只做了只讀確認：頁面開著時讀到 8 顆、扭力皆關、沒有寫入；頁面關掉後 `servo_tool.py scan` 可用。它沒有對實機下過任何動作。
+- 實機使用（使用者操作，19:27–20:01；依據是 `logs/panel_events.jsonl`，bring-up 觀察，沒有 experiment ID）：151 段移動，150 段到位並停下（慢 67、中 40、快 43），到位後目標與實際的差平均 1.5°、最大 7.0°。一次 `LAG_EXCEEDED`：快速檔，拇指 ID 7 第 3／8 輪目標 +5.2°、實際 −14.1°；面板關掉 8 顆扭力並鎖住，使用者 10 秒後解除。閒置逾時關扭力 3 次、按停止 4 次，每次 8 顆都關成功。存了 `ya`、`one`、`two`、`three`、`stone` 五個姿勢，重現 34 次。這也是 `hand_api` 的真 adapter 與 `motion.move_together` 第一次在實機上寫入；先前實機上跑的是 `servo_tool.py` 自己的版本。
+- 使用者問能不能用 RPi 取代驅動板。評估後決定維持 USB 接法：
+  - 驅動板做三件事：USB 轉 UART、把 TX／RX 併成伺服機的單線半雙工、分配伺服機的 5 V。RPi 只能直接取代第一件。
+  - 留著板子、改走 RPi 的 GPIO UART 是可行的：[Seeed 的說明](https://wiki.seeedstudio.com/bus_servo_driver_board/)寫這塊板有 UART 模式（拔掉正面的跳線帽，D7 是板子的 RX、D6 是板子的 TX）。沒有做，所以 D6／D7 的電位、UART 模式下有沒有回音都沒有量過；RPi 的 GPIO 不耐 5 V。
+  - 完全不用板子，就要自己做半雙工電路、可能的電位轉換，以及獨立的伺服機電源與配線（8 顆不能從 RPi 的 5 V 腳取電）。
+  - 能得到的只有少一條 USB 線與每筆通訊約 1 ms 的 USB 延遲，對現在的用法沒有實質差別。
+- 使用者回報：扭力那一區換字時（移動中／閒置倒數的說明一行與兩行交替、故障與自動關扭力的說明插在最上面、確認啟用時按鈕變寬），整頁會上下跳。改成固定版面：狀態、倒數、說明、按鈕各有固定大小的位置，只換字與顏色；故障與自動關扭力的說明移進這一區；頂列的狀態字固定兩行高，電壓與溫度的數字最多 2 秒換一次，偶發一次的讀值失敗不會讓字閃。在模擬頁面上用 13 種狀態量過（桌面 1280 px、窄版 924 px、手機 375 px）：手指區的位置、扭力區與頂列的高度、按鈕寬度都不變。
+- 尚未做：面板在實機上的故障注入；`handd`／MCP 在 RPi 上只裝了環境，沒有啟動。
+
+## 2026-10-11 — 用戒指握拳控制右手（QRing Hand）
+
+- 使用者要求：用他的 QRing R08 智慧戒指（資料在 [pcpcchen-coder/qringr08plus](https://github.com/pcpcchen-coder/qringr08plus)）的三軸數據控制這隻手，握拳時手跟著握拳；做成裝在他那台 Mac mini 上的 App，要有校正介面、啟動開關、戒指資訊。手仍然接在 RPi 上。決策寫成 [ADR-0008](../docs/adr/0008-qring-fist-operator-control.md)（proposed），說明在 [`control_methods/qring_fist/README.md`](control_methods/qring_fist/README.md)。
+- 做法：
+  - 戒指只有重力方向。校正記「張開」「握拳」兩個方向，之間的弧線換算成握拳程度，再線性內插成四指的彎曲（張開 −30° 到握拳姿勢，預設內建 85°）。固定的幾何換算，沒有模型。
+  - 對手的動作全部經由網頁操作面板既有的 HTTP 介面，身分是一個控制的頁面（心跳、`enable`、`fingers`、`stop`）。**`hand_panel`、`hand_api` 與 RPi 上的東西都沒有改**；落後、電壓、溫度、掉線、到位、閒置、心跳的保護照舊在面板那一側。
+  - App 這一側：啟動要按兩次；啟動前要有新鮮而且有效的握拳讀值、面板沒有 fault、匯流排 attached、8 顆都回應、沒有別的頁面在控制；讀值無效時不送新目標；戒指斷線、App 結束送關扭力；面板關了扭力就跟著停、不自己再啟動；「長按戒指啟動」預設關。
+  - 定位和面板相同：給人用的工具，不是 skill，不是 AI 的控制路徑。
+- 使用者說這是控制手的方法之一，之後還會用雙目相機做另一種。因此開 `control_methods/`，一種方法一個資料夾；共同的界線寫在 [`control_methods/README.md`](control_methods/README.md)。
+- 程式最初寫在戒指 repo 的工作目錄（`hand-app/`），在那裡建置、安裝到 `~/Applications/QRing Hand.app`（0.1.0，ad-hoc 簽章）。之後搬到這個 repo 的 `control_methods/qring_fist/`：App 內的程式檔內容相同；`install.command`、`build_app.py`、`requirements.txt` 依新位置改過（自己的 `.venv`、產物在 `.build.noindex/`），**改過的這三個檔還沒在 Mac 上跑過**。
+- 驗證：
+  - 47 項測試（模擬戒指＋照面板 HTTP 介面做的假面板）在開發環境與那台 Mac 的 Apple Python 3.9 上通過；封裝自我檢查 `BUNDLED_APP_SELF_TEST_OK`；安裝後簽章檢查通過。這些測試不在 `pytest right_hand/tests -q` 裡（相依套件不同）。
+  - 開發環境接上真的 `hand_panel` 程式（模擬 adapter）跑過整條路徑：握拳、張開、來回、閒置逾時後 App 跟著停、結束 App 後扭力關、心跳停掉後面板約 3 秒關扭力。
+  - 寫程式的這一方（AI）在實機上只讀了面板的狀態（`/api/status`）與稽核紀錄（`/api/log`），沒有對實機下過任何動作。
+- 實機使用（使用者操作，10:46–10:47 與 13:31–13:32；依據是面板 `/api/log` 最近 100 筆，bring-up 觀察，沒有 experiment ID）：真的戒指（R08_E703 / RT08_V3.1 / RT08_3.10.48_260309）、中速、連續模式、內建握拳。96 段移動全部到位並停下，沒有 fault；到位後目標與實際的差平均 1.9°、最大 3.8°（768 筆）；握到 85°、張開到 −30° 都走過。3 次關扭力都是按停止，每次 8 顆都關成功。這 100 筆以外的事件沒有看。
+- 看到的問題：App 畫面上戒指的三軸更新率約 4 Hz。現在是送一次快照要求、等回報再送下一次；戒指 repo 的[加速度實測](https://github.com/pcpcchen-coder/qringr08plus/blob/main/docs/2026-10-09-accelerometer-verified.md)用固定每 0.1 秒送一次要求量到約 10 Hz。還沒改。
+- 搬過來之後在開發環境重跑測試，同一組 47 項偶爾卡住不結束（前後十次完整執行裡有三次；先前在開發環境的四次與 Mac 上的一次都剛好沒遇到）。原因：結束時用取消來停「送目標」的工作，而那個工作在等新取樣時用了 `asyncio.wait_for`；Python 3.9 的 `wait_for` 在等的東西剛好完成時會把取消吃掉，工作繼續跑，收尾就一直等它。對已安裝的 0.1.0 的意思是：結束 App 時若剛好有取樣進來，扭力仍然會關（排在前面），但戒指的觸控設定不會還原、三軸輪詢不會送停止，要等原生容器的 60 秒逾時才結束。實機上有沒有發生過沒有紀錄。
+- 修成 0.1.1：送目標的工作改看旗標自己結束，等待改用不會吃掉取消的寫法；收尾的每一段（送目標、背景工作、戒指斷線、面板連線）都有時間上限。加了 2 項回歸測試（修之前會卡住、修之後通過），共 49 項，開發環境連跑三次都通過。
+- 使用者要求把更新率改成 10 Hz 並重裝。併進 0.1.1：三軸讀取多一種「固定節拍」並設為預設——每 0.1 秒送一次快照要求、不等回報（戒指 repo 加速度實測的送法）；原本「等回報再送」留在設定裡可以換回來。戒指超過 1 秒沒回報時，固定節拍先放慢到每 0.5 秒一次，免得寫入一直堆著。`install.command` 改成先請執行中的 App 正常結束（關扭力、還原戒指設定），再清掉卡住沒結束的舊服務。加 3 項測試，共 52 項。
+- 在 Mac 上重裝（14:50–14:52，Finder 開 `install.command`，使用者核准）：舊的 0.1.0 在 20 秒內正常結束；這個資料夾的腳本第一次在 Mac 上跑——用 `/usr/bin/python3` 建 `.venv`、裝 `requirements.txt`（沒有 Quartz）、52 項測試通過（83 秒）、建置、`BUNDLED_APP_SELF_TEST_OK`、`INSTALL_OK 0.1.1`。建置用的是和這個資料夾內容相同的一份本機副本（放在戒指 repo 的工作目錄裡、不進 Git），不是這個 repo 在 Mac 上的 checkout。
+- 裝好後在 App 上看到的（bring-up 觀察）：重新簽章後 macOS 再問一次藍牙權限，允許前按「連接戒指」得到 `Bluetooth device is turned off`；允許後連上，三軸更新率 9.8 Hz，稍後 14.7 Hz（比送出要求的 10 Hz 高，原因沒查）。AI 這一方在 App 上按過「連接戒指」一次（權限還沒允許，失敗）與「中斷戒指」一次（原本要按的是連接，按到時使用者已經自己連上了）；那次中斷紀錄了「觸控設定已還原」，之後使用者重新連上。App 重開後（14:51–14:52）面板讀 8 顆伺服機都回 `Parsing error`（0 / 8），14:52:50 的畫面已經是 8 / 8、4.6–4.7 V；原因沒查，可能是伺服機電源當時關著。這時頂列的「手掌」仍顯示「就緒」，是 App 的小問題，沒有改。
+- 0.1.1 的實機使用（使用者操作，14:54–14:57；依據是面板 `/api/log` 與 App 的事件，bring-up 觀察，沒有 experiment ID）：
+  - 中速，14:54:30–14:55:17（47 秒）：26 段移動全部到位，期間下了 88 次目標；到位後的差平均 1.9°、最大 3.3°。按停止結束。
+  - 中速，14:55:34–14:55:55（22 秒）：19 段移動全部到位，55 次目標；差平均 1.9°、最大 3.0°。按停止結束。
+  - 快速，14:56:29：啟用扭力時食指還在握著的位置（ID 1 +82.0°、ID 2 −83.5°），其餘三指張開。第一段移動的目標是四指都到約 −19°，
+    第 3／9 輪 `VOLTAGE_SAG`：ID 1 讀到 3.9 V（下限 4.0 V）。面板關掉 8 顆扭力（都成功）並鎖住 fault；App 的事件是「跟隨中止：手掌保護機制啟動並鎖定：VOLTAGE_SAG…」，
+    沒有自己再啟動。使用者 9 秒後解除鎖定。平常沒在動時面板讀到的電壓是 4.6–4.7 V。電壓為什麼掉（供電餘裕、那一顆的接線、或單指走長行程的起步電流）沒有查。
+  - 快速，14:56:42–14:57:26（44 秒）：26 段移動全部到位，71 次目標；差平均 2.0°、最大 4.7°。按停止結束。
+  - 四段裡握到 85°、張開到 −30° 都走過；沒有 `LAG_EXCEEDED`。跟隨中 App 畫面上的三軸更新率看到過 8.5 Hz。
+- 尚未做：其餘中止路徑在實機上的紀錄（閒置逾時、心跳看門狗、戒指斷線、App 被強制結束、Mac 斷網）；慢速；長時間使用；端到端延遲。
+
 ### 待辦（下一次接手從這裡開始）
 
 收尾：
@@ -220,7 +296,21 @@
 - [x] `gesture ok fast`：實機跑過一次，12 輪 0.5 秒，正常結束。
 - [ ] `gesture ok normal`：還沒看到實機紀錄。
 - [ ] 補上獨立的 E-stop，再讓任何 skill 驅動這隻手。
-- [ ] 把手勢從 bring-up 工具搬到 versioned skill（參數 schema、前置條件、限制、timeout、取消、稽核事件、模擬與拒絕測試）。
+- [x] ADR-0006 授權方式：逐次核准（2026-10-08 使用者決定）。
+- [ ] Mac mini：`pip install -r right_hand/requirements.txt`、跑 `handd.sh`（模擬與 `--adapter scs` 只讀各一次）、登記 MCP server、在對話裡走一次提議 → 核准 → 模擬執行。
+- [ ] ADR-0006 P3 前：決定並裝上固定的實體開關／E-stop；決定第一批要校正的手勢。
+- [ ] 把手勢從 bring-up 工具搬到 versioned skill（參數 schema、前置條件、限制、timeout、取消、稽核事件、模擬與拒絕測試）。設計見 `docs/hand_api_design.md`，分期 P1–P4。
 - [ ] 把 bring-up 工具收斂成 hardware adapter（含 fake adapter、timestamp／freshness、斷線與 safe-state 測試），建立 8-DOF 的 semantic component IDs 與 manifest。
 - [ ] 雙目相機：跑 probe 腳本確認解析度、FPS、左右眼，再進 ADR-0005 的驗證項目。
 - [ ] （選做）量測 USB 外殼之間的電位差。
+- [ ] ADR-0007：決定要不要接受；`hand-panel` 服務要不要開機自動啟動。
+- [ ] 面板在實機上的故障注入：移動中關頁面、拔 USB、切電源、殺面板。
+- [ ] 快速檔下拇指落後 19.3°（上限 19°）那一次：重現看看是起步慢還是被擋住，再決定要不要動速度檔。
+- [ ] `handd`／MCP 要不要搬到 RPi（ADR-0006 的 Revisit 條件「有 Linux robot host」已成立）。
+- [ ] ADR-0008：決定要不要接受。
+- [x] QRing Hand：三軸更新率約 4 Hz → 0.1.1 改成固定節拍送快照要求，實機畫面上約 10–15 Hz。
+- [x] QRing Hand 0.1.1：在實機上跟隨並看面板的稽核紀錄——中速沒有誤觸發落後檢查；快速出現一次 `VOLTAGE_SAG`。
+- [ ] 快速檔下 ID 1 電壓掉到 3.9 V：量伺服機電源在全手快速動作時的電壓，查是供電餘裕還是接線；弄清楚前戒指控制用中速。
+- [ ] QRing Hand：在實機上觸發其餘中止路徑（閒置逾時、戒指斷線、強制結束 App、Mac 斷網），並量端到端延遲。fault 鎖定這一條 2026-10-11 觸發過一次。
+- [x] QRing Hand：在 Mac 上用 `control_methods/qring_fist/install.command` 建置並安裝 0.1.1。
+- [ ] 雙目相機的控制方法（放 `control_methods/`；做法未定）。
