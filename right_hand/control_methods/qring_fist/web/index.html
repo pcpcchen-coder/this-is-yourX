@@ -207,7 +207,7 @@
       </label>
       <label class="field"><span class="head">平滑 <output data-for="opt-smoothing"></output></span>
         <input type="range" id="opt-smoothing" min="0" max="0.9" step="0.05" data-percent>
-        <small>越高越穩、越慢。戒指每秒約回報 10 次。</small>
+        <small>越高越穩、越慢。戒指預設每秒約回報 10 次（見「快照輪詢調校」）。</small>
       </label>
       <label class="field"><span class="head">張開的界線 <output data-for="opt-open_margin"></output></span>
         <input type="range" id="opt-open_margin" min="0" max="0.4" step="0.01" data-percent>
@@ -229,15 +229,48 @@
 
     <fieldset>
       <legend>戒指</legend>
-      <label class="field">三軸讀取
-        <select id="opt-poll_mode"><option value="fixed">固定節拍：每 0.1 秒要一筆（約 10 Hz）</option><option value="wait">等回報再要下一筆（0.1.0 的做法，實機上約 4 Hz）</option></select>
-        <small>固定節拍讓手跟得比較順。更新率看「控制」頁的戒指欄；若變得不穩，換回等回報。</small>
-      </label>
       <label class="check"><input type="checkbox" id="opt-ring_touch"> 開啟戒指的觸控回報（結束時還原戒指原本的設定）</label>
       <label class="check"><input type="checkbox" id="opt-tap_confirm"> 校正時，單擊戒指等於按「記錄」與「儲存」</label>
       <label class="check"><input type="checkbox" id="opt-long_press_stop"> 跟隨中長按戒指：停止</label>
       <label class="check"><input type="checkbox" id="opt-long_press_start"> 停止時長按戒指：啟動跟隨</label>
       <small>長按啟動預設關閉：戒指握著東西也可能被當成長按，手掌會在你沒看著的時候動起來。</small>
+    </fieldset>
+    <fieldset id="polling">
+      <legend>快照輪詢調校</legend>
+      <div class="poll-head"><output id="poll-status" data-active="false">—</output><button type="button" id="poll-reset">重置統計</button></div>
+      <div class="poll-metrics">
+        <div><small>實際送出</small><strong id="poll-tx">—</strong></div>
+        <div><small>收到三軸</small><strong id="poll-rx">—</strong></div>
+        <div><small>數值變化</small><strong id="poll-change">—</strong></div>
+      </div>
+      <small id="poll-details">尚未開始統計</small>
+      <div class="field poll-field">
+        <label for="poll-period">快照發送節拍</label>
+        <span class="poll-inputs"><input type="range" id="poll-slider-period" min="0" max="2" step="0.001" aria-label="快照發送節拍滑桿"><input type="number" id="poll-period" min="0" max="2" step="0.001" inputmode="decimal"><span>秒</span></span>
+        <small>每兩輪開始之間的最短間隔。0 表示盡快進入下一輪。</small>
+      </div>
+      <div class="field poll-field">
+        <label for="poll-timeout">等待新取樣上限</label>
+        <span class="poll-inputs"><input type="range" id="poll-slider-timeout" min="0" max="2" step="0.001" aria-label="等待新取樣上限滑桿"><input type="number" id="poll-timeout" min="0" max="2" step="0.001" inputmode="decimal"><span>秒</span></span>
+        <small>送出要求後最多等多久；0 表示不等，直接照節拍送下一筆。</small>
+      </div>
+      <div class="field poll-field">
+        <label for="poll-pause">取樣或逾時後休息</label>
+        <span class="poll-inputs"><input type="range" id="poll-slider-pause" min="0" max="2" step="0.001" aria-label="取樣或逾時後休息滑桿"><input type="number" id="poll-pause" min="0" max="2" step="0.001" inputmode="decimal"><span>秒</span></span>
+        <small>收到取樣或等到上限後再停多久；0 表示不休息。</small>
+      </div>
+      <div class="row poll-presets">
+        <button type="button" data-poll-preset="fixed10">10 Hz 固定（預設）</button>
+        <button type="button" data-poll-preset="fixed20">20 Hz 節拍</button>
+        <button type="button" data-poll-preset="wait">等回報（0.1.0）</button>
+        <button type="button" data-poll-preset="studio">Studio 原設定</button>
+        <button type="button" data-poll-preset="fast">最快測試</button>
+      </div>
+      <div class="row"><button type="button" id="poll-save" class="primary">套用並儲存</button></div>
+      <small id="poll-saved">—</small>
+      <small class="poll-warn" id="poll-warn" hidden>一輪超過 1 秒時，「啟動跟隨」要的「1 秒內的有效讀值」可能不成立，跟隨中也可能顯示資料中斷。</small>
+      <small>節拍是目標，實際速率還受等待與戒指回報影響。統計是最近 2 秒，含重複值；「數值變化」不等於感測器的取樣率，「等待逾時」也不是掉包率。
+        跟隨、校正或這個 APP 的畫面開著時才會輪詢；新設定在下一輪生效，跟隨中也可以改。連續 1 秒沒有任何回報時，一輪會自動拉長到 0.5 秒。</small>
     </fieldset>
   </div>
 </section>

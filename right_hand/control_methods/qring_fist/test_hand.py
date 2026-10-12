@@ -14,11 +14,11 @@ from aiohttp import ClientSession, web
 from aiohttp.test_utils import TestServer
 
 import server as app_server
-from engine import DEFAULTS, Engine, clean_options
+from engine import DEFAULTS, POLL_KEYS, Engine, clean_options
 from follow import (BUILTIN_FIST, CurlFilter, CurlModel, StabilityWindow, angle_deg, clamp_finger, finger_targets,
                     unit)
 from hand import normalize_url
-from ring import pack
+from ring import POLL_DEFAULTS, POLL_PRESETS, QUIET_PERIOD_S, SnapshotStats, pack
 from sim import FIST_VEC, OPEN_VEC, FakeRingTransport, slerp
 
 
@@ -237,6 +237,29 @@ class FollowMath(unittest.TestCase):
         self.assertEqual(clean["mode"], "binary")
         self.assertEqual(clean_options("junk"), clean_options({}))
 
+    def test_snapshot_statistics(self):
+        stats = SnapshotStats(10.0)
+        for i in range(10):                             # 0.2 秒一筆，每兩筆重複一次
+            t = 10.0 + 0.2 * i
+            stats.record_send(t)
+            stats.record_sample([i // 2, 0, 8192], t + 0.05)
+        stats.record_wait(0.05, False)
+        stats.record_wait(0.3, True)
+        stats.no_wait += 3
+        p = stats.snapshot(12.0)
+        self.assertEqual(p["window_s"], 2.0)
+        self.assertEqual((p["sent"], p["received"], p["changed"]), (10, 10, 4))
+        self.assertAlmostEqual(p["rx_hz"], 5.0, delta=0.6)
+        self.assertEqual((p["waited"], p["timeouts"], p["no_wait"]), (2, 1, 3))
+        self.assertEqual(p["timeout_percent"], 50.0)
+        self.assertEqual(p["mean_wait_ms"], 175.0)
+        self.assertEqual(p["max_gap_ms"], 200.0)
+        self.assertAlmostEqual(p["sample_age"], 0.15, places=2)
+        fresh = SnapshotStats(5.0).snapshot(5.5)        # 剛重置：用比較短的窗口，沒有取樣就說沒有
+        self.assertEqual(fresh["window_s"], 0.5)
+        self.assertIsNone(fresh["sample_age"])
+        self.assertIsNone(fresh["mean_wait_ms"])
+
     def test_packet_checksum(self):
         frame = pack(0xA1, b"\x03")
         self.assertEqual(len(frame), 16)
@@ -254,8 +277,7 @@ class EngineCase(unittest.IsolatedAsyncioTestCase):
         self.fake = FakeRingTransport()
         self.engine = Engine(self.folder, ring_transport_factory=lambda: self.fake, check_studio=False)
         self.engine.window = StabilityWindow(seconds=0.8, min_samples=4, min_span_s=0.3)
-        self.engine.ring.accel_interval = 0.02
-        self.engine.ring.request_period = 0.02
+        self.engine.ring.poll = dict(POLL_DEFAULTS, accel_period=0.02)     # 測試跑快一點；不存進設定
         await self.engine.start()
 
     async def asyncTearDown(self):
@@ -620,7 +642,8 @@ class EngineCase(unittest.IsolatedAsyncioTestCase):
         for bad in ({"speed": "warp"}, {"smoothing": 2}, {"unknown": 1}, {"fingers": {"toe": True}},
                     {"fingers": {"thumb": False, "index": False, "middle": False, "ring": False}},
                     {"open_margin": 0.4, "fist_margin": 0.55}, {"deadband": True}, {"hand_url": "ftp://x"},
-                    {"poll_mode": "turbo"}, {}):
+                    {"poll_mode": "wait"}, {"accel_period": -0.1}, {"accel_timeout": 2.5},
+                    {"accel_interval": True}, {"accel_period": "0.1"}, {"accel_timeout": float("nan")}, {}):
             with self.assertRaises(ValueError, msg=str(bad)):
                 self.engine.set_options(bad)
         self.engine.set_options({"speed": "fast", "smoothing": 0.2, "fingers": {"ring": False}})
@@ -645,45 +668,136 @@ class EngineCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.fake.touch[3:5], [0, 0])
         self.assertFalse(self.engine.ring.state["connected"])
 
-    async def test_fixed_cadence_requests_do_not_wait_for_the_ring(self):
-        self.engine.ring.request_period = 0.1
-        self.fake.reply_delay = 0.19                    # 實機上一來一回大約這麼久
+    async def rate(self, seconds):
         await self.watch()
         await self.engine.ring_connect()
         await self.until(lambda: self.engine.ring.state["raw"] is not None)
-        await asyncio.sleep(1.2)
-        self.assertEqual(self.engine.options["poll_mode"], "fixed")
-        fixed = self.engine.ring.snapshot()["rate_hz"]
-        self.assertGreater(fixed, 8.0)
-        self.assertLess(fixed, 12.0)
+        self.engine.ring.reset_stats()
+        await asyncio.sleep(seconds)
+        return self.engine.ring.polling_snapshot()
 
-    async def test_wait_mode_keeps_the_request_then_wait_behaviour(self):
-        self.engine.set_options({"poll_mode": "wait"})
-        self.engine.ring.accel_interval = 0.06
+    async def test_default_fixed_cadence_does_not_wait_for_the_ring(self):
+        self.assertEqual({k: self.engine.options[k] for k in POLL_KEYS}, POLL_PRESETS["fixed10"])
+        self.engine.set_options(dict(POLL_PRESETS["fixed10"]))
+        self.fake.reply_delay = 0.19                    # 實機上一來一回大約這麼久
+        p = await self.rate(2.2)
+        self.assertGreater(p["rx_hz"], 8.0)
+        self.assertLess(p["rx_hz"], 12.0)
+        self.assertEqual(p["waited"], 0)
+        self.assertGreater(p["no_wait"], 15)
+        self.assertTrue(p["active"])
+        self.assertEqual(p["label"], "輪詢中")
+
+    async def test_wait_preset_keeps_the_request_then_wait_behaviour(self):
+        self.engine.set_options(dict(POLL_PRESETS["wait"]))
         self.fake.reply_delay = 0.19
-        await self.watch()
-        await self.engine.ring_connect()
-        await self.until(lambda: self.engine.ring.state["raw"] is not None)
-        await asyncio.sleep(3.4)
-        waited = self.engine.ring.snapshot()["rate_hz"]
-        self.assertLess(waited, 5.0)                    # 一來一回 0.19 秒 + 停 0.06 秒 ≈ 4 Hz
-        self.assertGreater(waited, 2.5)
+        p = await self.rate(2.2)
+        self.assertLess(p["rx_hz"], 5.0)                # 一來一回 0.19 秒 + 停 0.06 秒 ≈ 4 Hz
+        self.assertGreater(p["rx_hz"], 2.5)
+        self.assertGreater(p["waited"], 5)
+        self.assertEqual(p["timeouts"], 0)
+        self.assertGreater(p["mean_wait_ms"], 150)
+
+    async def test_period_and_pause_are_independent(self):
+        self.fake.reply_delay = 0.02
+        self.engine.set_options({"accel_period": 0.25, "accel_timeout": 0.3, "accel_interval": 0.0})
+        p = await self.rate(2.0)                        # 回報很快，但節拍守住 0.25 秒
+        self.assertGreater(p["tx_hz"], 3.0)
+        self.assertLess(p["tx_hz"], 5.0)
+        self.engine.set_options({"accel_period": 0.0, "accel_timeout": 0.3, "accel_interval": 0.2})
+        self.assertEqual(self.engine.ring.stats.sent, 0, "套用新設定時統計要重置")
+        await asyncio.sleep(2.0)
+        p = self.engine.ring.polling_snapshot()        # 每輪 ≈ 0.02 等待 + 0.2 休息
+        self.assertGreater(p["tx_hz"], 3.5)
+        self.assertLess(p["tx_hz"], 5.5)
+        self.assertEqual(self.engine.ring.poll["accel_interval"], 0.2)
+
+    async def test_wait_limit_when_the_ring_does_not_answer(self):
+        self.engine.set_options({"accel_period": 0.0, "accel_timeout": 0.1, "accel_interval": 0.0})
+        await self.rate(0.3)
+        self.fake.silent = True
+        self.engine.ring.reset_stats()
+        await asyncio.sleep(0.6)                        # 還沒到 QUIET_AFTER_S：每輪等滿 0.1 秒就放棄
+        p = self.engine.ring.polling_snapshot()
+        self.assertGreaterEqual(p["timeouts"], 4)
+        self.assertEqual(p["timeouts"], p["waited"])
+        self.assertAlmostEqual(p["mean_wait_ms"], 100, delta=25)
+        await asyncio.sleep(1.0)
+        self.assertTrue(self.engine.ring.backoff)
+        self.assertIn("放慢", self.engine.ring.polling_snapshot()["label"])
+        self.fake.silent = False
+        await self.until(lambda: self.engine.ring.fresh(0.3), message="戒指恢復回報後沒有接上")
+        await self.until(lambda: not self.engine.ring.backoff)
 
     async def test_fixed_cadence_slows_down_when_the_ring_stops_answering(self):
-        self.engine.ring.request_period = 0.05
-        await self.watch()
-        await self.engine.ring_connect()
-        await self.until(lambda: self.engine.ring.state["raw"] is not None)
+        self.engine.set_options({"accel_period": 0.05, "accel_timeout": 0.0, "accel_interval": 0.0})
+        await self.rate(0.2)
         self.fake.silent = True
         await asyncio.sleep(1.3)                        # 超過 QUIET_AFTER_S
         request = pack(0xA1, b"\x03")
         before = self.fake.writes.count(request)
         await asyncio.sleep(2.0)
         sent = self.fake.writes.count(request) - before
-        self.assertLessEqual(sent, 6, "戒指不回時還在全速送要求")
+        self.assertLessEqual(sent, 2.0 / QUIET_PERIOD_S + 2, "戒指不回時還在全速送要求")
         self.assertGreaterEqual(sent, 2, "戒指不回時完全不送了，恢復後接不上")
         self.fake.silent = False
         await self.until(lambda: self.engine.ring.fresh(0.3), message="戒指恢復回報後沒有接上")
+
+    async def test_all_zero_settings_still_yield_and_write_one_at_a_time(self):
+        self.engine.set_options(dict(POLL_PRESETS["fast"]))
+        ticks = 0
+        inflight = peak = 0
+        original = self.fake.write
+
+        async def counted(frame):
+            nonlocal inflight, peak
+            inflight += 1
+            peak = max(peak, inflight)
+            try:
+                await asyncio.sleep(0)
+                return await original(frame)
+            finally:
+                inflight -= 1
+        self.fake.write = counted
+
+        async def ticker():
+            nonlocal ticks
+            while True:
+                await asyncio.sleep(0.01)
+                ticks += 1
+        task = asyncio.ensure_future(ticker())
+        try:
+            p = await self.rate(0.5)
+        finally:
+            task.cancel()
+        self.assertGreater(ticks, 25, "全部設 0 時把事件迴圈佔住了")
+        self.assertGreater(p["sent"], 50)
+        self.assertEqual(peak, 1, "同時有一個以上的寫入")
+        self.assertEqual(p["waited"], 0)
+
+    async def test_polling_settings_change_while_following(self):
+        await self.follow()
+        self.engine.set_options({"accel_period": 0.15})
+        self.assertEqual(self.engine.phase, "following")
+        self.assertEqual(self.engine.ring.poll["accel_period"], 0.15)
+        saved = json.loads((self.folder / "preferences.json").read_text())
+        self.assertEqual(saved["accel_period"], 0.15)
+        self.fake.curl = 1.0
+        await self.until(lambda: (self.flex() or 0) > 60, message="改了輪詢之後沒有繼續跟隨")
+
+    async def test_old_poll_mode_preference_is_migrated(self):
+        self.assertEqual({k: clean_options({"poll_mode": "wait"})[k] for k in POLL_KEYS}, POLL_PRESETS["wait"])
+        self.assertEqual({k: clean_options({"poll_mode": "fixed"})[k] for k in POLL_KEYS}, POLL_DEFAULTS)
+        kept = clean_options({"poll_mode": "wait", "accel_period": 0.2, "accel_timeout": 0.0, "accel_interval": 0.0})
+        self.assertEqual(kept["accel_period"], 0.2)
+        self.assertEqual(kept["accel_timeout"], 0.0)
+        self.assertNotIn("poll_mode", clean_options({"poll_mode": "wait"}))
+        (self.folder / "m").mkdir()
+        (self.folder / "m" / "preferences.json").write_text(json.dumps({"poll_mode": "wait", "speed": "slow"}))
+        old = Engine(self.folder / "m", check_studio=False)
+        self.addCleanup(lambda: old.log_file and old.log_file.close())
+        self.assertEqual(old.ring.poll, POLL_PRESETS["wait"])
+        self.assertEqual(old.options["speed"], "slow")
 
     async def test_sampling_stops_when_nobody_is_watching(self):
         await self.engine.ring_connect()
@@ -770,6 +884,24 @@ class ServerCase(unittest.IsolatedAsyncioTestCase):
             menu = await r.json()
         self.assertEqual(menu, {"ring": False, "hand": False, "calibrated": False, "following": False,
                                 "busy": False, "mode": "disconnected", "label": "戒指未連線"})
+
+    async def test_polling_state_and_reset(self):
+        async with self.session.get(self.base + "/api/state") as r:
+            state = await r.json()
+        self.assertEqual(state["polling"]["label"], "未連線")
+        self.assertEqual(state["polling"]["settings"], POLL_DEFAULTS)
+        self.assertEqual(state["app"]["poll_presets"], POLL_PRESETS)
+        async with self.session.post(self.base + "/api/options", json={"accel_period": 0.05, "accel_timeout": 0.03}) as r:
+            self.assertEqual(r.status, 200)
+        async with self.session.post(self.base + "/api/options", json={"accel_interval": 3}) as r:
+            self.assertEqual(r.status, 400)
+            self.assertIn("0 到 2 秒", (await r.json())["error"])
+        async with self.session.post(self.base + "/api/ring/polling/reset", json={}) as r:
+            self.assertEqual(r.status, 200)
+        async with self.session.get(self.base + "/api/state") as r:
+            state = await r.json()
+        self.assertEqual(state["polling"]["settings"]["accel_period"], 0.05)
+        self.assertEqual(state["polling"]["sent"], 0)
 
     async def test_page_and_assets_are_served(self):
         async with self.session.get(self.base + "/") as r:

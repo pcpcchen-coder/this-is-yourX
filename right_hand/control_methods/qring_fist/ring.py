@@ -18,12 +18,23 @@ GATT_FIELDS = (("hardware", "00002a27-0000-1000-8000-00805f9b34fb"),
                ("firmware", "00002a26-0000-1000-8000-00805f9b34fb"),
                ("serial", "00002a25-0000-1000-8000-00805f9b34fb"))
 GESTURES = {1: "上滑", 2: "下滑", 3: "單擊", 4: "長按"}
-SAMPLE_WAIT_S = 0.3             # 「等回報」模式：一次要求最多等這麼久
-WAIT_GAP_S = 0.06               # 「等回報」模式：收到回報後再停這麼久（0.1.0 的做法，實機約 4 Hz）
-REQUEST_PERIOD_S = 0.1          # 「固定節拍」模式：每隔這麼久送一次快照要求，不等回報
-QUIET_AFTER_S = 1.0             # 固定節拍下這麼久沒收到回報，就先放慢要求，免得寫入一直堆著
+# 快照輪詢的三個時間（秒），和 QRing Studio 0.4.0「快照輪詢調校」同名同義，都可設 0–2：
+#   accel_period   每輪開始之間的最短間隔（節拍）；0 盡快進入下一輪
+#   accel_timeout  送出 A1 03 後最多等新取樣多久；0 不等
+#   accel_interval 收到取樣或等到上限後再休息多久；0 不休息
+# 一輪的長度 ≥ max(節拍, 寫入 + 實際等待 + 休息)。落後節拍時不補送。
+POLL_LIMITS = (0.0, 2.0)
+POLL_PRESETS = {
+    "fixed10": {"accel_period": 0.1, "accel_timeout": 0.0, "accel_interval": 0.0},    # 0.1.1 的固定節拍（預設）
+    "fixed20": {"accel_period": 0.05, "accel_timeout": 0.03, "accel_interval": 0.0},  # Studio 的 20 Hz 節拍
+    "wait": {"accel_period": 0.0, "accel_timeout": 0.3, "accel_interval": 0.06},      # 0.1.0 的等回報（實機約 4 Hz）
+    "studio": {"accel_period": 0.0, "accel_timeout": 0.35, "accel_interval": 0.15},   # Studio 的原設定
+    "fast": {"accel_period": 0.0, "accel_timeout": 0.0, "accel_interval": 0.0},       # 最快測試
+}
+POLL_DEFAULTS = dict(POLL_PRESETS["fixed10"])
+QUIET_AFTER_S = 1.0             # 這麼久沒收到任何回報，就先把一輪拉長到 0.5 秒，免得寫入一直堆著
 QUIET_PERIOD_S = 0.5
-POLL_MODES = ("fixed", "wait")
+STATS_WINDOW_S = 2.0
 BATTERY_PERIOD_S = 120.0
 
 
@@ -96,6 +107,54 @@ class BleakTransport:
                 pass
 
 
+class SnapshotStats:
+    """快照輪詢的到達統計（同 QRing Studio 0.4.0）。協定沒有要求編號，這不是配對的往返，也不是感測器的原生取樣率。"""
+
+    def __init__(self, now):
+        self.started = now
+        self.tx, self.rx, self.changes = deque(maxlen=4000), deque(maxlen=4000), deque(maxlen=4000)
+        self.sent = self.received = self.changed = self.waited = self.timeouts = self.no_wait = 0
+        self.wait_seconds = 0.0
+        self.last_raw = None
+        self.last_received = None
+
+    def record_send(self, now):
+        self.sent += 1
+        self.tx.append(now)
+
+    def record_sample(self, raw, now):
+        self.received += 1
+        self.rx.append(now)
+        value = tuple(raw)
+        if self.last_raw is not None and value != self.last_raw:
+            self.changed += 1
+            self.changes.append(now)
+        self.last_raw = value
+        self.last_received = now
+
+    def record_wait(self, seconds, timed_out):
+        self.waited += 1
+        self.wait_seconds += seconds
+        self.timeouts += int(timed_out)
+
+    def snapshot(self, now):
+        window = min(STATS_WINDOW_S, max(0.001, now - self.started))
+        for queue in (self.tx, self.rx, self.changes):
+            while queue and queue[0] <= now - window:
+                queue.popleft()
+        rx = list(self.rx)
+        gaps = [b - a for a, b in zip(rx, rx[1:])]
+        r = lambda v, n=1: None if v is None else round(v, n)
+        return {"window_s": r(window, 2), "tx_hz": r(len(self.tx) / window), "rx_hz": r(len(self.rx) / window),
+                "change_hz": r(len(self.changes) / window), "sent": self.sent, "received": self.received,
+                "changed": self.changed, "waited": self.waited, "timeouts": self.timeouts, "no_wait": self.no_wait,
+                "timeout_percent": r(100 * self.timeouts / self.waited if self.waited else None),
+                "mean_wait_ms": r(1000 * self.wait_seconds / self.waited if self.waited else None),
+                "max_gap_ms": r(1000 * max(gaps) if gaps else None),
+                "sample_age": r(now - self.last_received if self.last_received is not None else None, 2),
+                "elapsed_s": r(max(0.0, now - self.started))}
+
+
 class RingLink:
     def __init__(self, name="R08_E703", transport_factory=None, on_accel=None, on_gesture=None,
                  on_disconnect=None, log=None, monotonic=time.monotonic):
@@ -114,9 +173,10 @@ class RingLink:
         self.sample = asyncio.Event()
         self.want_accel = False
         self.want_touch = True
-        self.poll_mode = "fixed"
-        self.request_period = REQUEST_PERIOD_S
-        self.accel_interval = WAIT_GAP_S
+        self.poll = dict(POLL_DEFAULTS)     # 由 engine 依設定更新；下一輪生效
+        self.stats = SnapshotStats(monotonic())
+        self.polling = False
+        self.backoff = False
         self.touch_original = None
         self.touch_on = False
         self.times = deque(maxlen=64)
@@ -133,6 +193,20 @@ class RingLink:
         age = now - self.last_sample if self.last_sample else None
         return dict(self.state, rate_hz=round(rate, 1), sample_age=None if age is None else round(age, 2),
                     sampling=self.want_accel)
+
+    def reset_stats(self):
+        self.stats = SnapshotStats(self.monotonic())
+
+    def polling_snapshot(self):
+        now = self.monotonic()
+        if not self.state["connected"]:
+            label = "未連線"
+        elif self.polling:
+            label = "輪詢中（沒收到回報，已放慢到每 %.1f 秒）" % QUIET_PERIOD_S if self.backoff else "輪詢中"
+        else:
+            label = "暫停（沒有在跟隨、校正，畫面也沒在看）"
+        return dict(self.stats.snapshot(now), active=self.polling, backoff=self.backoff, label=label,
+                    settings=dict(self.poll))
 
     def fresh(self, limit=1.0):
         return bool(self.last_sample) and self.monotonic() - self.last_sample <= limit
@@ -156,6 +230,7 @@ class RingLink:
             self.times.append(now)
             self.state["raw"] = raw
             self.state["magnitude"] = round((raw[0] ** 2 + raw[1] ** 2 + raw[2] ** 2) ** 0.5 / 8192, 3)
+            self.stats.record_sample(raw, now)
             self.sample.set()
             self.on_accel(raw, now)
         elif op == 0x73 and f[1] == 0x2D:
@@ -284,32 +359,45 @@ class RingLink:
             if self.monotonic() >= next_battery:
                 await self.send(3, timeout=1.0)
                 next_battery = self.monotonic() + BATTERY_PERIOD_S
-            if self.want_accel and self.poll_mode == "wait":
-                self.sample.clear()
-                await self.send(0xA1, b"\x03", reply=False)
-                try:
-                    await asyncio.wait_for(self.sample.wait(), SAMPLE_WAIT_S)
-                except asyncio.TimeoutError:
-                    pass
-                had_accel = True
-                await self._sleep(self.accel_interval)
-            elif self.want_accel:
-                # 固定節拍：戒指 repo 的加速度實測就是這樣送，量到約 10 Hz。回報由通知各自進來，不和要求配對。
-                began = self.monotonic()
+            if self.want_accel:
                 if not had_accel:
-                    requesting_since = began
-                await self.send(0xA1, b"\x03", reply=False)
-                had_accel = True
-                quiet = began - max(self.last_sample, requesting_since) > QUIET_AFTER_S
-                period = max(self.request_period, QUIET_PERIOD_S) if quiet else self.request_period
-                await self._sleep(max(0.005, period - (self.monotonic() - began)))
+                    requesting_since = self.monotonic()
+                    self.reset_stats()
+                had_accel = self.polling = True
+                await self._poll_once(requesting_since)
             else:
+                self.polling = self.backoff = False
                 if had_accel:
                     await self.send(0xA1, b"\x00", reply=False)
                     had_accel = False
                 await self._sleep(0.2)
 
+    async def _poll_once(self, requesting_since):
+        """一輪：寫一次 A1 03 →（可選）等新取樣 → 休息，並守住節拍。每輪只有一個寫入，不並行、不補送。"""
+        period, timeout, pause = (self.poll[k] for k in ("accel_period", "accel_timeout", "accel_interval"))
+        began = self.monotonic()
+        self.sample.clear()
+        await self.send(0xA1, b"\x03", reply=False)
+        sent = self.monotonic()
+        self.stats.record_send(sent)
+        if timeout > 0:
+            waiter = asyncio.ensure_future(self.sample.wait())
+            try:                                # 不用 wait_for：Python 3.9 會在取樣剛好進來時把取消吃掉
+                done, _ = await asyncio.wait({waiter}, timeout=timeout)
+            finally:
+                waiter.cancel()
+            self.stats.record_wait(self.monotonic() - sent, not done)
+        else:
+            self.stats.no_wait += 1
+        # 回報由通知各自進來，不和要求配對；只看「最近有沒有任何回報」決定要不要放慢。
+        self.backoff = began - max(self.last_sample, requesting_since) > QUIET_AFTER_S
+        cycle = max(period, QUIET_PERIOD_S) if self.backoff else period
+        await self._sleep(max(pause, cycle - (self.monotonic() - began), 0.0))
+
     async def _sleep(self, seconds):
+        if seconds <= 0:                        # 三個時間都設 0 時也要讓出事件迴圈
+            await asyncio.sleep(0)
+            return
         try:
             await asyncio.wait_for(self.stop.wait(), seconds)
         except asyncio.TimeoutError:
