@@ -207,3 +207,17 @@ legend { font-family: var(--round); font-weight: 700; font-size: 1.05rem; paddin
   .flow[data-live=true] i { animation: none; }
   .power .rocker, .power .rocker i { transition: none; }
 }
+
+/* 快照輪詢調校 */
+.poll-head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+#poll-status { font-weight: 700; color: var(--ink2); }
+#poll-status[data-active="true"] { color: var(--ok); }
+.poll-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
+.poll-metrics > div { border: 1px solid var(--line); border-radius: 10px; padding: .45rem .6rem; display: grid; }
+.poll-metrics strong { font-family: var(--round); font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+#poll-details, #poll-saved { font-variant-numeric: tabular-nums; }
+.poll-inputs { display: flex; align-items: center; gap: .5rem; font-weight: 400; }
+.poll-inputs input[type=range] { flex: 1; min-width: 60px; }
+.poll-inputs input[type=number] { width: 5.2rem; }
+.poll-presets button { font-size: .82rem; padding: .3rem .55rem; }
+.poll-warn { color: var(--brass); }

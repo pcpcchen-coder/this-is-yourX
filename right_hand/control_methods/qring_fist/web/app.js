@@ -336,7 +336,7 @@
 
   // ────────────────────────────────────────────────── 設定
   const OPTION_IDS = ["auto_link", "speed", "fist_pose", "fist_scale", "mode", "smoothing", "open_margin", "fist_margin",
-                      "deadband", "off_limit", "poll_mode", "ring_touch", "tap_confirm", "long_press_stop", "long_press_start"];
+                      "deadband", "off_limit", "ring_touch", "tap_confirm", "long_press_stop", "long_press_start"];
   function labelFor(input) {
     const out = document.querySelector('output[data-for="' + input.id + '"]');
     if (!out) return;
@@ -396,12 +396,84 @@
     $("opt-tap_confirm").disabled = $("opt-long_press_stop").disabled = $("opt-long_press_start").disabled = !o.ring_touch;
   }
 
+  // ────────────────────────────────────────────────── 快照輪詢調校（同 QRing Studio 0.4.0）
+  const POLL_FIELDS = { period: "accel_period", timeout: "accel_timeout", pause: "accel_interval" };
+  let pollDirty = false;
+  const secs = (v) => String(Math.round(Number(v) * 1000) / 1000);
+  function editPoll(key, value) {
+    pollDirty = true;
+    $("poll-" + key).value = value;
+    $("poll-slider-" + key).value = value;
+    if (state) renderPolling(state);
+  }
+  function pollValues(source) {
+    const out = {};
+    for (const [key, option] of Object.entries(POLL_FIELDS)) out[key] = Number(source(key, option));
+    return out;
+  }
+  function renderPolling(s) {
+    const p = s.polling || {}, o = s.options;
+    if (!pollDirty) for (const [key, option] of Object.entries(POLL_FIELDS)) {
+      for (const id of ["poll-" + key, "poll-slider-" + key]) if (document.activeElement !== $(id) && $(id).value !== secs(o[option])) $(id).value = secs(o[option]);
+    }
+    text("poll-status", p.label || "—");
+    attr("poll-status", "data-active", !!p.active);
+    const hz = (v) => (v == null ? "—" : Number(v).toFixed(1));
+    text("poll-tx", hz(p.tx_hz) + " 次/秒");
+    text("poll-rx", hz(p.rx_hz) + " 筆/秒");
+    text("poll-change", hz(p.change_hz) + " 次/秒");
+    const waits = p.waited ? "等待逾時 " + p.timeouts + "/" + p.waited + " 次（" + p.timeout_percent.toFixed(1) + "%），平均等 " + p.mean_wait_ms.toFixed(0) + " ms" : "沒有等待的輪次";
+    const age = p.sample_age == null ? "尚無取樣" : "最後取樣 " + p.sample_age.toFixed(2) + " 秒前";
+    text("poll-details", "統計 " + Number(p.elapsed_s || 0).toFixed(1) + " 秒 · 送出 " + (p.sent || 0) + " 次／收到 " + (p.received || 0) +
+         " 筆／變化 " + (p.changed || 0) + " 次 · " + waits + " · 不等待 " + (p.no_wait || 0) + " 次 · " + age +
+         (p.max_gap_ms == null ? "" : " · 最近最大間隔 " + p.max_gap_ms.toFixed(0) + " ms"));
+    const applied = pollValues((k, option) => o[option]);
+    text("poll-saved", "目前套用：節拍 " + secs(applied.period) + " 秒／等待取樣 " + secs(applied.timeout) + " 秒／休息 " + secs(applied.pause) + " 秒" +
+         (pollDirty ? " · 編輯尚未儲存" : ""));
+    const shown = pollValues((k) => $("poll-" + k).value);
+    show("poll-warn", Math.max(shown.period, shown.pause) >= 1);
+    enable("poll-reset", !!s.ring.connected);
+  }
+  async function savePolling() {
+    const changes = {};
+    for (const [key, option] of Object.entries(POLL_FIELDS)) {
+      const input = $("poll-" + key), v = Number(input.value);
+      if (input.value === "" || !isFinite(v) || v < 0 || v > 2) { toast("快照輪詢的時間請輸入 0–2 秒", true); return; }
+      changes[option] = v;
+    }
+    enable("poll-save", false);
+    try {
+      await api("/api/options", changes);
+      pollDirty = false;
+      toast("快照輪詢設定已儲存，下一輪生效；統計已重置");
+    } catch (e) {
+      toast(e.message, true);
+    } finally {
+      enable("poll-save", true);
+      refresh();
+    }
+  }
+  function bindPolling() {
+    for (const key of Object.keys(POLL_FIELDS)) {
+      $("poll-" + key).addEventListener("input", () => editPoll(key, $("poll-" + key).value));
+      $("poll-slider-" + key).addEventListener("input", () => editPoll(key, $("poll-slider-" + key).value));
+    }
+    for (const b of document.querySelectorAll("[data-poll-preset]")) b.addEventListener("click", () => {
+      const preset = state && state.app.poll_presets[b.dataset.pollPreset];
+      if (!preset) return;
+      for (const [key, option] of Object.entries(POLL_FIELDS)) editPoll(key, secs(preset[option]));
+    });
+    $("poll-save").addEventListener("click", savePolling);
+    $("poll-reset").addEventListener("click", () => act("/api/ring/polling/reset", {}, () => toast("統計已重置")));
+  }
+
   function render(s) {
     state = s;
     text("version", s.app.version);
     renderControl(s);
     renderCalibration(s);
     renderSettings(s);
+    renderPolling(s);
   }
 
   // ────────────────────────────────────────────────── 輪詢
@@ -461,6 +533,7 @@
     for (const b of document.querySelectorAll(".retake")) b.addEventListener("click", () => act("/api/calibration/retake", { pose: b.dataset.pose }));
     $("opt-hand_url").addEventListener("input", (e) => { e.target.dataset.touched = "1"; });
     bindSettings();
+    bindPolling();
   }
 
   bind();

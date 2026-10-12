@@ -116,6 +116,10 @@ async def create_app(folder, port, fake_ring=False, self_test=False):
         engine.set_options(await body(req))
         return ok()
 
+    async def polling_reset(req):
+        engine.ring.reset_stats()
+        return ok()
+
     async def shutdown(req):
         closed.append(True)
         await engine.close()
@@ -131,7 +135,8 @@ async def create_app(folder, port, fake_ring=False, self_test=False):
                           ("/api/calibration/start", cal_start), ("/api/calibration/capture", cal_capture),
                           ("/api/calibration/retake", cal_retake), ("/api/calibration/save", cal_save),
                           ("/api/calibration/cancel", cal_cancel),
-                          ("/api/options", options), ("/api/shutdown", shutdown)):
+                          ("/api/options", options), ("/api/ring/polling/reset", polling_reset),
+                          ("/api/shutdown", shutdown)):
         app.router.add_post(path, handler)
 
     web_root = ROOT / "web"
