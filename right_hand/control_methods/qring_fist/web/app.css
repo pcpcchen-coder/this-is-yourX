@@ -233,3 +233,6 @@ legend { font-family: var(--round); font-weight: 700; font-size: 1.05rem; paddin
 .sway-track i { position: absolute; top: 1px; bottom: 1px; width: 8px; margin-left: -4px; background: var(--steel); border-radius: 4px; z-index: 1; }
 .sway-scale { display: flex; justify-content: space-between; margin-top: .3rem; font-size: .85rem; color: var(--ink2); }
 .side-icon { font-size: 4rem; line-height: 1.2; text-align: center; color: var(--steel); }
+
+.finger { grid-template-columns: 3.3rem 1fr; }
+.finger output { grid-column: 1 / -1; font-size: .75rem; }

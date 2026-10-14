@@ -153,6 +153,8 @@ class SwayFilter:
             self.output = target
         else:
             self.output += (1 - smoothing) * (target - self.output)
+        if abs(self.output) > .998:
+            self.output = math.copysign(1.0, self.output)
         return self.output
 
 
@@ -252,4 +254,24 @@ def finger_targets(curl, fist_pose=None, enabled=None, scale=1.0, open_pose=None
         c = curl if (enabled is None or enabled.get(name, True)) else 0.0
         flex, side = clamp_finger(o[0] + c * (f[0] - o[0]), o[1] + c * (f[1] - o[1]))
         out[name] = {"flex": round(flex, 1), "side": round(side, 1)}
+    return out
+
+
+def direct_targets(curl, sway, enabled=None):
+    """校正後的連續雙輸入 → 四指彎曲／側擺，不讀任何存好的姿勢。
+
+    彎曲 -30..85°；側擺 -40..40°，拇指鏡像；最後逐指依成對馬達限位收斂。
+    """
+    if not all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+               for x in (curl, sway)):
+        raise ValueError("跟隨輸入無效")
+    flex = -30.0 + 115.0 * max(0.0, min(1.0, curl))
+    side = 40.0 * max(-1.0, min(1.0, sway))
+    out = {}
+    for name in FINGERS:
+        if enabled is not None and not enabled.get(name, True):
+            f, s = -30.0, 0.0
+        else:
+            f, s = clamp_finger(flex, -side if name == "thumb" else side)
+        out[name] = {"flex": round(f, 1), "side": round(s, 1)}
     return out

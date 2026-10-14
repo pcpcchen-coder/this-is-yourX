@@ -1,6 +1,6 @@
-"""QRing Hand 的核心：戒指的握拳程度 → 手掌面板的手指目標。
+"""QRing Hand 的核心：戒指的彎曲與側擺 → 手掌面板的連續手指目標。
 
-流程：戒指三軸（ring.py）→ 校正模型與濾波（follow.py）→ 每根手指的彎曲角度 → 手掌面板（hand.py）。
+流程：戒指三軸（ring.py）→ 四點校正與濾波（follow.py）→ 每根手指的彎曲與側擺角度 → 手掌面板（hand.py）。
 這是給人操作的遙控工具，不含任何模型；手掌的保護（落後、電壓、溫度、掉線、閒置、心跳）都在面板那一側。
 
 安全上的幾個決定：
@@ -21,11 +21,11 @@ from pathlib import Path
 
 import aiohttp
 
-from follow import BUILTIN_FIST, FINGERS, FINGER_LABELS, CurlFilter, CurlModel, PalmModel, SwayFilter, StabilityWindow, finger_targets
+from follow import FINGERS, FINGER_LABELS, CurlFilter, CurlModel, PalmModel, SwayFilter, StabilityWindow, direct_targets
 from hand import HandLink, finish_tasks, normalize_url
 from ring import POLL_DEFAULTS, POLL_LIMITS, POLL_PRESETS, RingLink
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 RING_NAME = "R08_E703"
 SEND_PERIOD_S = 0.12            # 和面板頁面拖滑桿時的送出間隔相同
 FLEX_SPAN_DEG = 120.0           # 張開 −30° 到握 90°
@@ -35,16 +35,15 @@ UI_SAMPLING_KEEP_S = 5.0        # 畫面最近有在看才持續讀三軸
 STUDIO_STATUS_URL = "http://127.0.0.1:18765/api/control-status"
 
 DEFAULTS = {
-    "hand_url": "", "auto_link": True, "speed": "normal", "mode": "continuous",
+    "hand_url": "", "auto_link": True, "speed": "normal",
     "sway_neutral": 0.1, "smoothing": 0.5, "open_margin": 0.12, "fist_margin": 0.88, "off_limit": 35.0, "deadband": 0.04,
-    "fist_pose": "builtin", "fist_scale": 1.0,
     "fingers": {name: True for name in FINGERS},
     "ring_touch": True, "long_press_stop": True, "long_press_start": False, "tap_confirm": True,
     **POLL_DEFAULTS,
 }
 POLL_KEYS = tuple(POLL_DEFAULTS)
 NUMBER_LIMITS = {"sway_neutral": (0.0, 0.4), "smoothing": (0.0, 0.9), "open_margin": (0.0, 0.4), "fist_margin": (0.6, 1.0),
-                 "off_limit": (10.0, 80.0), "deadband": (0.01, 0.2), "fist_scale": (0.2, 1.0),
+                 "off_limit": (10.0, 80.0), "deadband": (0.01, 0.2),
                  **{key: POLL_LIMITS for key in POLL_KEYS}}
 BOOLEANS = ("auto_link", "ring_touch", "long_press_stop", "long_press_start", "tap_confirm")
 RING_START_WAIT_S = 2.5         # 戒指長按啟動時，等新鮮讀值的時間
@@ -84,12 +83,8 @@ def clean_options(saved):
             out[key] = saved[key]
     if saved.get("speed") in ("slow", "normal", "fast"):
         out["speed"] = saved["speed"]
-    if saved.get("mode") in ("continuous", "binary"):
-        out["mode"] = saved["mode"]
     if saved.get("poll_mode") == "wait" and not any(key in saved for key in POLL_KEYS):
         out.update(POLL_PRESETS["wait"])     # 0.1.1 存的「等回報」換成同樣的三個時間
-    if isinstance(saved.get("fist_pose"), str) and 0 < len(saved["fist_pose"]) <= 40:
-        out["fist_pose"] = saved["fist_pose"]
     if isinstance(saved.get("fingers"), dict):
         for name in FINGERS:
             if isinstance(saved["fingers"].get(name), bool):
@@ -152,7 +147,6 @@ class Engine:
         self.sent = None
         self.sent_at = 0.0
         self.sent_count = 0
-        self.fist_pose = None                  # 啟動時解析出來的握拳姿勢
         self.last_gesture = 0.0
         self.ui_seen = 0.0
         self.sample_until = 0.0
@@ -282,7 +276,7 @@ class Engine:
         o = self.options
         m = model.measure(raw, o["off_limit"])
         if m["valid"]:
-            self.filter.update(m["progress"], o["open_margin"], o["fist_margin"], o["smoothing"], o["mode"])
+            self.filter.update(m["progress"], o["open_margin"], o["fist_margin"], o["smoothing"], "continuous")
             self.curl_at = now
             if isinstance(model, PalmModel):
                 self.sway_filter.update(m["sway_progress"], o["sway_neutral"], o["smoothing"])
@@ -294,7 +288,7 @@ class Engine:
         m["value"] = self.filter.output
         m["span"] = round(model.span, 1)
         self.curl = m
-        if self.filter.output is not None:
+        if m["valid"] and self.filter.output is not None and self.sway_filter.output is not None and isinstance(model, PalmModel):
             self.targets = self._targets(self.filter.output)
         self.kick.set()
 
@@ -377,28 +371,14 @@ class Engine:
         self._say(message, "warn")
         self.log("follow", "跟隨中止：%s" % message)
 
-    def _resolve_fist_pose(self):
-        name = self.options["fist_pose"]
-        if name == "builtin":
-            return dict(BUILTIN_FIST)
-        for pose in self.hand.poses:
-            if pose["name"] == name:
-                if not pose["playable"]:
-                    raise ValueError("握拳姿勢「%s」目前不能用（面板標示不可重現）。到設定換一個" % name)
-                try:
-                    return {f: (float(pose["fingers"][f]["flex"]), float(pose["fingers"][f]["side"])) for f in FINGERS}
-                except (KeyError, TypeError, ValueError):
-                    raise ValueError("握拳姿勢「%s」的資料不完整。到設定換一個" % name)
-        raise ValueError("手掌面板上找不到握拳姿勢「%s」。到設定重新選擇" % name)
-
     def _targets(self, curl):
-        pose = self.fist_pose if self.phase in ("starting", "following") else None
-        if pose is None:
-            try:
-                pose = self._resolve_fist_pose()
-            except ValueError:
-                pose = BUILTIN_FIST
-        return finger_targets(curl, pose, self.options["fingers"], self.options["fist_scale"])
+        return direct_targets(curl, self.sway_filter.output, self.options["fingers"])
+
+    def _inputs_fresh(self, limit=1.0):
+        return (isinstance(self._active_model(), PalmModel) and self.curl.get("valid") and self.sway.get("valid")
+                and self.ring.fresh(limit) and self.monotonic() - self.curl_at <= limit
+                and self.monotonic() - self.sway_at <= limit and self.filter.output is not None
+                and self.sway_filter.output is not None)
 
     # ------------------------------------------------------------------ 啟動與停止
     def arm_problem(self):
@@ -407,21 +387,17 @@ class Engine:
             return "校正進行中；先儲存或取消校正"
         if not self.ring.state["connected"]:
             return "先連接戒指"
-        if self.model is None:
-            return "先完成校正（張開與握拳各記一次）"
+        if not isinstance(self.model, PalmModel):
+            return "先完成四姿勢校正（張開、握拳、左側擺、右側擺）"
         problem = self.hand.ready_problem()
         if problem:
             return problem
-        try:
-            self._resolve_fist_pose()
-        except ValueError as e:
-            return str(e)
         if not self.ring.fresh(1.0):
             return "還沒收到戒指的三軸資料"
         if not self.curl.get("valid"):
             return ISSUE_TEXT.get(self.curl.get("issue"), "握拳讀值無效")
-        if self.monotonic() - self.curl_at > 1.0 or self.filter.output is None:
-            return "握拳讀值不是最新的"
+        if not self._inputs_fresh():
+            return "彎曲與側擺需要最新的有效讀值"
         return None
 
     async def arm(self, source="畫面"):
@@ -431,7 +407,6 @@ class Engine:
             problem = self.arm_problem()
             if problem:
                 raise ValueError(problem)
-            self.fist_pose = self._resolve_fist_pose()
             self.phase = "starting"
             result = await self.hand.enable(self.options["speed"])
             if self.phase != "starting":            # 等待期間被停止
@@ -447,8 +422,7 @@ class Engine:
             self.follow_started = self.monotonic()
             self.phase = "following"
             self._say("跟隨中（由%s啟動）" % source)
-            self.log("follow", "開始跟隨", source=source, speed=self.options["speed"], mode=self.options["mode"],
-                     fist_pose=self.options["fist_pose"])
+            self.log("follow", "開始跟隨", source=source, speed=self.options["speed"], mapping="direct-v1")
             self.kick.set()
 
     async def stop(self, message="已停止，手掌扭力已關", kind="info"):
@@ -477,7 +451,11 @@ class Engine:
                    for f in FINGERS)
         if diff >= self.options["deadband"] * FLEX_SPAN_DEG:
             return True
-        return diff > 0.05 and self.filter.output in (0.0, 1.0)
+        curl_end = self.filter.output in (0.0, 1.0) and any(
+            abs(targets[f]["flex"] - self.sent[f]["flex"]) > 0.05 for f in FINGERS)
+        sway_end = self.sway_filter.output in (-1.0, 0.0, 1.0) and any(
+            abs(targets[f]["side"] - self.sent[f]["side"]) > 0.05 for f in FINGERS)
+        return curl_end or sway_end
 
     async def _sender(self):
         while not self.closing:
@@ -493,12 +471,12 @@ class Engine:
             self.ring.want_accel = (self.phase in ("starting", "following") or self.cal["active"]
                                     or now - self.ui_seen < UI_SAMPLING_KEEP_S or now < self.sample_until)
             self.ring.want_touch = self.options["ring_touch"]
-            if self.phase != "following" or self.targets is None or not self.curl.get("valid"):
+            if self.phase != "following" or self.targets is None or not self._inputs_fresh():
                 continue
             wait = SEND_PERIOD_S - (self.monotonic() - self.sent_at)
             if wait > 0:
                 await asyncio.sleep(wait)
-                if self.phase != "following" or not self.curl.get("valid"):
+                if self.phase != "following" or not self._inputs_fresh():
                     continue
             targets = self.targets
             if not self._changed(targets):
@@ -644,14 +622,6 @@ class Engine:
                 if value not in ("slow", "normal", "fast"):
                     raise ValueError("速度只能是慢、中、快")
                 new[key] = value
-            elif key == "mode":
-                if value not in ("continuous", "binary"):
-                    raise ValueError("模式只能是連續或兩段")
-                new[key] = value
-            elif key == "fist_pose":
-                if not isinstance(value, str) or not 0 < len(value) <= 40:
-                    raise ValueError("握拳姿勢名稱無效")
-                new[key] = value
             elif key == "fingers":
                 if not isinstance(value, dict) or set(value) - set(FINGERS) or \
                         any(not isinstance(v, bool) for v in value.values()):
@@ -664,17 +634,19 @@ class Engine:
         if new["fist_margin"] - new["open_margin"] < 0.2:
             raise ValueError("握拳到底與張開的界線至少要差 20%")
         if self.phase in ("starting", "following") and \
-                any(k in changes for k in ("speed", "fist_pose", "hand_url")):
-            raise ValueError("跟隨中不能改速度、握拳姿勢或手掌位址；先停止")
+                any(k in changes for k in ("speed", "hand_url")):
+            raise ValueError("跟隨中不能改速度或手掌位址；先停止")
         self.options = new
         self._save_options()
-        if any(k in changes for k in ("mode", "open_margin", "fist_margin")):
+        if any(k in changes for k in ("open_margin", "fist_margin", "sway_neutral")):
             self.sway_filter.reset()
             self.filter.reset()
+            self.curl["valid"] = False
+            self.sway["valid"] = False
         if any(k in changes for k in POLL_KEYS):
             self.ring.poll = {key: new[key] for key in POLL_KEYS}     # 下一輪生效
             self.ring.reset_stats()
-        if self.filter.output is not None:
+        if self._inputs_fresh():
             self.targets = self._targets(self.filter.output)
             self.kick.set()
         self.log("options", "選項已更新", changes=changes)
@@ -729,14 +701,14 @@ class Engine:
             mode, label = "disconnected", "戒指未連線"
         elif self.cal["active"]:
             mode, label = "calibrating", "校正中"
-        elif self.model is None:
-            mode, label = "uncalibrated", "未校正"
+        elif not isinstance(self.model, PalmModel):
+            mode, label = "uncalibrated", "需要四姿勢校正"
         elif not hand:
             mode, label = "nohand", "手掌未連線"
         elif panel.get("fault"):
             mode, label = "fault", "手掌鎖定"
         else:
             mode, label = "ready", "待命"
-        return {"ring": ring, "hand": hand, "calibrated": self.model is not None,
+        return {"ring": ring, "hand": hand, "calibrated": isinstance(self.model, PalmModel),
                 "following": self.phase == "following", "busy": self.phase in ("starting", "stopping"),
                 "mode": mode, "label": label}
