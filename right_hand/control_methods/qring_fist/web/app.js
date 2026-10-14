@@ -142,7 +142,7 @@
     enable("stop", hand.linked);
 
     // 步驟
-    const done = { ring: ring.connected, hand: hand.reachable, cal: !!cal.saved, go: follow.phase === "following" };
+    const done = { ring: ring.connected, hand: hand.reachable, cal: !!(cal.saved && [2, 3].includes(cal.saved.version)), go: follow.phase === "following" };
     let next = null;
     for (const li of $("steps").children) {
       const key = li.dataset.step;
@@ -191,8 +191,8 @@
     let readingText = "", readingBad = false;
     if (!ring.connected) readingText = "先連接戒指";
     else if (follow.stale) { readingText = "戒指的資料中斷，手掌停在上一個位置"; readingBad = true; }
-    else if (curl.issue) { readingText = curl.issue_text; readingBad = ["moving", "off_axis", "out_of_range", "invalid"].includes(curl.issue); }
-    else if (curl.valid) readingText = "讀值正常，方向偏離 " + Math.abs(curl.off).toFixed(0) + "°";
+    else if (curl.issue) { readingText = curl.issue_text; readingBad = ["moving", "off_axis", "out_of_range", "sway_out_of_range", "invalid"].includes(curl.issue); }
+    else if (curl.valid) readingText = curl.sway_progress != null ? "握拳與側擺讀值正常" : "讀值正常，方向偏離 " + Math.abs(curl.off).toFixed(0) + "°";
     text(reading, readingText);
     attr(reading, "data-bad", readingBad);
 
@@ -238,9 +238,13 @@
       const fill = row.querySelector("i"), mark = row.querySelector("b"), out = row.querySelector("output");
       if (f && f.actual) {
         fill.style.width = clamp01((f.actual.flex + 30) / 120) * 100 + "%";
-        text(out, f.actual.flex.toFixed(0) + "°");
+        text(out, "彎 " + f.actual.flex.toFixed(0) + "° · 側 " + f.actual.side.toFixed(0) + "°");
       } else { fill.style.width = "0"; text(out, "—"); }
-      if (f && f.target) { mark.hidden = false; mark.style.left = clamp01((f.target.flex + 30) / 120) * 100 + "%"; }
+      const fingerTarget = follow.phase === "following" && follow.targets ? follow.targets[row.dataset.finger] : f && f.target;
+      if (fingerTarget) {
+        mark.hidden = false; mark.style.left = clamp01((fingerTarget.flex + 30) / 120) * 100 + "%";
+        if (!(f && f.actual)) text(out, "目標：彎 " + fingerTarget.flex.toFixed(0) + "° · 側 " + fingerTarget.side.toFixed(0) + "°");
+      }
       else mark.hidden = true;
     }
     const note = $("hand-note");
@@ -285,18 +289,22 @@
     if (!cal.active) {
       if (!ring.connected) message = "先到「控制」連接戒指。";
       else if (!idle) message = "跟隨中不能校正；先停止。";
+      else if (cal.saved && ![2, 3].includes(cal.saved.version)) message = "原兩點校正已保留；直接跟隨需要張開、握拳、左、右四個姿勢，請重新校正。";
       else if (cal.saved) message = "已校正（" + cal.saved.saved_at.replace("T", " ").slice(0, 16) + "），張開與握拳相差 " + cal.saved.span_deg + "°。";
       else message = "還沒校正。戴好戒指，按「開始校正」。";
     }
     text("cal-message", message);
+    attr("cal-message", "data-error", !!(cal.active && cal.error));
 
     const stable = cal.stable;
-    for (const pose of ["open", "fist"]) {
+    const hasSides = cal.active ? cal.sway : true;
+    show("pose-left", hasSides); show("pose-right", hasSides);
+    for (const pose of ["open", "fist", "left", "right"]) {
       const card = $("pose-" + pose);
       const recorded = cal.active ? cal[pose] : cal.saved && cal.saved[pose];
       attr(card, "data-current", cal.active && cal.step === pose);
       attr(card, "data-done", !!recorded);
-      const label = pose === "open" ? "張開" : "握拳";
+      const label = {open:"張開", fist:"握拳", left:"左側擺", right:"右側擺"}[pose];
       let st = "還沒記錄";
       if (recorded) st = "已記錄 " + vec(recorded);
       else if (cal.active && cal.step === pose) st = "擺好" + label + "的姿勢，停住";
@@ -305,13 +313,20 @@
       enable(card.querySelector(".capture"), cal.active && cal.step === pose && !!(stable && stable.stable) && !busy);
       show(card.querySelector(".capture"), !(cal.active && cal[pose]));
       show(card.querySelector(".retake"), cal.active && !!cal[pose]);
-      draw(card.querySelector("svg"), pose === "open" ? 0 : 1, "you", null, false);
+      if (card.querySelector("svg")) draw(card.querySelector("svg"), pose === "open" ? 0 : 1, "you", null, false);
     }
+    const candidate = cal.candidate;
+    let geometryText = "側擺可伴隨握拳方向的偏移，程式會依左右取樣補償；手指保持自然張開。";
+    if (cal.active && ["left", "right"].includes(cal.step)) {
+      geometryText = candidate ? "可辨識側擺 " + Math.abs(candidate.side_deg).toFixed(1) + "° · 沿握拳偏移 " + candidate.along_deg.toFixed(1) +
+          "° · 方向分離度 " + candidate.separation_deg.toFixed(1) + "° · " + (candidate.reason || (candidate.ready ? "可記錄" : "請停穩後記錄")) : "正在收集側擺取樣；停穩後呈現角度。";
+    }
+    text("cal-geometry", geometryText);
     const steady = $("steady");
     let sState = "wait", sText = "等資料";
     if (!ring.connected) sText = "戒指未連線";
     else if (stable && stable.stable) { sState = "stable"; sText = "已停穩（散布 " + stable.spread + "°）"; }
-    else if (stable && stable.issue === "moving") { sState = "moving"; sText = "還在動"; }
+    else if (stable && stable.issue === "moving") { sState = "moving"; sText = ring.magnitude != null && (ring.magnitude < .9 || ring.magnitude > 1.1) ? "加速度 " + ring.magnitude.toFixed(2) + " g；校正需 0.9–1.1 g，請保持不動" : "還在動"; }
     else if (stable && stable.issue === "collecting") sText = "收集中…";
     attr(steady, "data-state", sState);
     text(steady.lastElementChild, sText);
@@ -327,15 +342,36 @@
     meter.querySelector(".hi").style.left = s.options.fist_margin * 100 + "%";
     text("meter-value", has ? percent(curl.value) : "—");
     let note = "校正後，這裡會即時顯示握拳程度。黑線是原始讀值，虛線是「設定」裡張開與握拳到底的界線。";
-    if (cal.active && cal.step === "review") note = "張開、握拳幾次，確認兩端都到得了。沒問題就儲存；單擊戒指也可以。";
+    if (cal.active && cal.step === "review") note = cal.sway ? "張開、握拳、左右側擺，確認兩個讀值。確認彎曲與左右側擺各自跟上；沒問題就儲存，或單擊戒指。" : "張開、握拳幾次，確認兩端都到得了。沒問題就儲存；單擊戒指也可以。";
     else if (has && curl.issue) note = curl.issue_text;
     text("review-note", note);
     show("cal-save", cal.active && cal.step === "review");
-    document.querySelector('nav [data-tab="calibration"]').classList.toggle("attention", ring.connected && !cal.saved && !cal.active);
+    document.querySelector('nav [data-tab="calibration"]').classList.toggle("attention", ring.connected && !(cal.saved && [2, 3].includes(cal.saved.version)) && !cal.active);
+  }
+
+  function renderSway(s) {
+    const side = s.follow.sway || {};
+    const fresh = s.ring.connected && side.valid && side.age != null && side.age <= 1 && side.value != null;
+    const value = fresh ? side.value : null;
+    const label = value == null ? "—" : Math.abs(value) < .005 ? "中立 0%" :
+        (value < 0 ? "左 " : "右 ") + Math.round(Math.abs(value) * 100) + "%";
+    for (const id of ["sway-value", "cal-sway-value"]) text(id, label);
+    for (const id of ["sway-marker", "cal-sway-marker"]) {
+      show(id, fresh);
+      if (fresh) $(id).style.left = ((value + 1) / 2 * 100) + "%";
+    }
+    for (const zone of document.querySelectorAll(".sway-neutral")) {
+      zone.style.width = s.options.sway_neutral * 100 + "%";
+      zone.style.left = (50 - s.options.sway_neutral * 50) + "%";
+    }
+    let note = "完成四個姿勢校正，即可直接跟隨彎曲與側擺。原兩點校正請重新校正。";
+    if (side.calibrated) note = fresh ? "側擺角度 " + side.angle + "° · 有效讀值 " + side.age.toFixed(2) + " 秒前" :
+        (side.issue_text || "等待最新的有效取樣");
+    text("sway-note", note); text("cal-sway-note", note);
   }
 
   // ────────────────────────────────────────────────── 設定
-  const OPTION_IDS = ["auto_link", "speed", "fist_pose", "fist_scale", "mode", "smoothing", "open_margin", "fist_margin",
+  const OPTION_IDS = ["sway_neutral", "auto_link", "speed", "smoothing", "open_margin", "fist_margin",
                       "deadband", "off_limit", "ring_touch", "tap_confirm", "long_press_stop", "long_press_start"];
   function labelFor(input) {
     const out = document.querySelector('output[data-for="' + input.id + '"]');
@@ -371,16 +407,6 @@
     }
     if (!dirty.fingers) for (const input of boxes.querySelectorAll("input")) input.checked = !!o.fingers[input.dataset.finger];
 
-    const select = $("opt-fist_pose");
-    const names = (s.hand.poses || []).filter((p) => p.playable).map((p) => p.name);
-    const sig = names.join(",") + "|" + o.fist_pose;
-    if (select.dataset.sig !== sig && document.activeElement !== select) {
-      select.dataset.sig = sig;
-      select.textContent = "";
-      select.add(new Option("內建（四指彎曲 85°）", "builtin"));
-      for (const p of s.hand.poses || []) if (p.playable) select.add(new Option(p.name + (p.label ? "（" + p.label + "）" : ""), p.name));
-      if (o.fist_pose !== "builtin" && !names.includes(o.fist_pose)) select.add(new Option(o.fist_pose + "（面板上找不到）", o.fist_pose));
-    }
     for (const key of OPTION_IDS) {
       const el = $("opt-" + key);
       if (document.activeElement === el || (dirty[key] && now - dirty[key] < 1500)) continue;
@@ -392,7 +418,7 @@
     const url = $("opt-hand_url");
     if (document.activeElement !== url && !url.dataset.touched) url.value = (o.hand_url || "").replace("http://", "");
     const locked = s.follow.phase !== "idle";
-    for (const id of ["opt-speed", "opt-fist_pose", "opt-hand_url", "hand-link"]) enable(id, !locked);
+    for (const id of ["opt-speed", "opt-hand_url", "hand-link"]) enable(id, !locked);
     $("opt-tap_confirm").disabled = $("opt-long_press_stop").disabled = $("opt-long_press_start").disabled = !o.ring_touch;
   }
 
@@ -472,6 +498,7 @@
     text("version", s.app.version);
     renderControl(s);
     renderCalibration(s);
+    renderSway(s);
     renderSettings(s);
     renderPolling(s);
   }
@@ -526,7 +553,7 @@
       confirmUntil = Date.now() + 4000;
       render(state);
     });
-    $("cal-start").addEventListener("click", () => act("/api/calibration/start"));
+    $("cal-start").addEventListener("click", () => act("/api/calibration/start", {sway: true}));
     $("cal-cancel").addEventListener("click", () => act("/api/calibration/cancel"));
     $("cal-save").addEventListener("click", () => act("/api/calibration/save", {}, () => toast("校正已儲存")));
     for (const b of document.querySelectorAll(".capture")) b.addEventListener("click", () => act("/api/calibration/capture", { pose: b.dataset.pose }));

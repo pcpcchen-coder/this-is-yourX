@@ -97,6 +97,91 @@ class CurlModel:
         return out
 
 
+class PalmModel(CurlModel):
+    """握拳座標＋左右側擺；用左右取樣補償側擺伴隨的握拳方向偏移。"""
+    def __init__(self, open_vec, fist_vec, left_vec, right_vec, compensate=True):
+        super().__init__(open_vec, fist_vec)
+        self.compensate = compensate
+        self.sides = {}
+        self.coupling = {}
+        self.geometry = {}
+        for name, vec in (("left", left_vec), ("right", right_vec)):
+            d = self.check_side(name, vec)
+            self.geometry[name] = d
+            self.sides[name] = d["side_deg"]
+            self.coupling[name] = d["along_deg"]
+        if self.sides["left"] * self.sides["right"] >= 0:
+            raise ValueError("左右側擺記成同一側；請回到中立再分別向左、向右，兩邊都要離開中立")
+
+    def side_diagnostics(self, vec):
+        if not valid_vector(vec):
+            raise ValueError("左右側擺校正資料無效")
+        g = unit(vec)
+        latitude = math.degrees(math.asin(max(-1.0, min(1.0, dot(g, self.normal)))))
+        along = math.degrees(math.atan2(dot(g, self.along), dot(g, self.open)))
+        separation = math.degrees(math.atan2(abs(latitude), abs(along)))
+        return {"side_deg": latitude, "along_deg": along, "separation_deg": separation}
+
+    def check_side(self, name, vec):
+        d = PalmModel.side_diagnostics(self, vec)
+        side, along, separation = d["side_deg"], d["along_deg"], d["separation_deg"]
+        label = "左" if name == "left" else "右"
+        if abs(side) < 10:
+            raise ValueError("%s側擺可辨識角度 %.1f°，不足 10°；多側傾一些。平行桌面旋轉可能量不到" % (label, abs(side)))
+        if abs(side) > 65:
+            raise ValueError("%s側擺角度 %.1f°，超過 65°；減少側傾幅度，保持手指自然張開" % (label, abs(side)))
+        if abs(along) > 80:
+            raise ValueError("%s側擺沿握拳方向偏移 %.1f°，超過 80°；回到中立、保持自然張開再側傾" % (label, abs(along)))
+        if separation < 20:
+            raise ValueError("%s側擺與握拳方向分離度 %.1f°，需至少 20°（沿握拳偏移 %.1f°）；換個手掌中立方向再校正" %
+                             (label, separation, along))
+        return d
+
+    def measure(self, raw, off_limit=35.0):
+        out = super().measure(raw, 90.0)
+        if out.get("issue") in ("invalid", "moving"):
+            return out
+        g = unit(raw)
+        d = self.side_diagnostics(g)
+        off, theta = d["side_deg"], d["along_deg"]
+        endpoint_name = "left" if off * self.sides["left"] > 0 else "right"
+        fraction = off / self.sides[endpoint_name]
+        sway = abs(fraction) * (-1 if endpoint_name == "left" else 1)
+        correction = fraction * self.coupling[endpoint_name] if self.compensate else 0.0
+        # 選擇最接近有效握拳弧線的 360° 分支，避免跨 atan2 的 ±180° 時跳動。
+        theta -= correction
+        theta = min((theta - 360, theta, theta + 360), key=lambda t: abs(t - self.span / 2))
+        out.update(theta=round(theta, 1), off=round(off, 1), progress=theta / self.span,
+                   sway_progress=sway, sway_angle=round(off, 1), coupling_correction=round(correction, 1),
+                   valid=True, issue=None)
+        if theta < -RANGE_MARGIN_DEG or theta > self.span + RANGE_MARGIN_DEG:
+            out.update(valid=False, issue="out_of_range")
+        margin = min(off_limit, 15.0)
+        lo, hi = sorted(self.sides.values())
+        if off < lo - margin or off > hi + margin or abs(off) > 75:
+            out.update(valid=False, issue="sway_out_of_range")
+        return out
+
+
+class SwayFilter:
+    """側擺 -1（左）至 +1（右）；中立區之外重新縮放，再平滑。"""
+    def __init__(self):
+        self.output = None
+
+    def reset(self):
+        self.output = None
+
+    def update(self, progress, neutral=0.1, smoothing=0.5):
+        target = math.copysign(max(0.0, min(1.0, (abs(progress) - neutral) / (1 - neutral))), progress)
+        if self.output is None or target == 0:
+            self.output = target
+        else:
+            self.output += (1 - smoothing) * (target - self.output)
+        if abs(self.output) > .998:
+            self.output = math.copysign(1.0, self.output)
+        return self.output
+
+
 class CurlFilter:
     """把未截斷的 progress 整理成送給手掌的握拳程度 0–1。"""
 
@@ -193,4 +278,24 @@ def finger_targets(curl, fist_pose=None, enabled=None, scale=1.0, open_pose=None
         c = curl if (enabled is None or enabled.get(name, True)) else 0.0
         flex, side = clamp_finger(o[0] + c * (f[0] - o[0]), o[1] + c * (f[1] - o[1]))
         out[name] = {"flex": round(flex, 1), "side": round(side, 1)}
+    return out
+
+
+def direct_targets(curl, sway, enabled=None):
+    """校正後的連續雙輸入 → 四指彎曲／側擺，不讀任何存好的姿勢。
+
+    彎曲 -30..85°；側擺 -40..40°，拇指鏡像；最後逐指依成對馬達限位收斂。
+    """
+    if not all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+               for x in (curl, sway)):
+        raise ValueError("跟隨輸入無效")
+    flex = -30.0 + 115.0 * max(0.0, min(1.0, curl))
+    side = 40.0 * max(-1.0, min(1.0, sway))
+    out = {}
+    for name in FINGERS:
+        if enabled is not None and not enabled.get(name, True):
+            f, s = -30.0, 0.0
+        else:
+            f, s = clamp_finger(flex, -side if name == "thumb" else side)
+        out[name] = {"flex": round(f, 1), "side": round(s, 1)}
     return out

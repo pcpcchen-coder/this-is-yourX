@@ -15,7 +15,7 @@ from aiohttp.test_utils import TestServer
 
 import server as app_server
 from engine import DEFAULTS, POLL_KEYS, Engine, clean_options
-from follow import (BUILTIN_FIST, CurlFilter, CurlModel, StabilityWindow, angle_deg, clamp_finger, finger_targets,
+from follow import (BUILTIN_FIST, CurlFilter, CurlModel, PalmModel, SwayFilter, StabilityWindow, angle_deg, clamp_finger, finger_targets, direct_targets,
                     unit)
 from hand import normalize_url
 from ring import POLL_DEFAULTS, POLL_PRESETS, QUIET_PERIOD_S, SnapshotStats, pack
@@ -24,6 +24,100 @@ from sim import FIST_VEC, OPEN_VEC, FakeRingTransport, slerp
 
 def raw(vec, magnitude=1.0):
     return [int(round(x * 8192 * magnitude)) for x in unit(vec)]
+
+
+def palm_vector(model, curl, side):
+    theta, latitude = math.radians(model.span * curl), math.radians(side)
+    return tuple(math.cos(latitude) * (math.cos(theta) * model.open[i] + math.sin(theta) * model.along[i]) +
+                 math.sin(latitude) * model.normal[i] for i in range(3))
+
+
+class PalmCase(unittest.TestCase):
+    def setUp(self):
+        self.arc = CurlModel(OPEN_VEC, FIST_VEC)
+        self.model = PalmModel(OPEN_VEC, FIST_VEC, palm_vector(self.arc, 0, -25), palm_vector(self.arc, 0, 35))
+
+    def test_both_inputs_are_independent_across_calibrated_coordinates(self):
+        for curl in (0, .2, .5, .8, 1):
+            for side in (-25, -12.5, 0, 17.5, 35):
+                m = self.model.measure(raw(palm_vector(self.arc, curl, side)))
+                self.assertTrue(m["valid"], m)
+                self.assertAlmostEqual(m["progress"], curl, delta=.001)
+                expected = side / (25 if side < 0 else 35)
+                self.assertAlmostEqual(m["sway_progress"], expected, delta=.001)
+
+    def test_natural_coupled_sway_is_calibrated_and_compensated(self):
+        left = palm_vector(self.arc, 30 / self.arc.span, -25)
+        right = palm_vector(self.arc, -22 / self.arc.span, 35)
+        m = PalmModel(OPEN_VEC, FIST_VEC, left, right)
+        for curl in (0, .3, .7, 1):
+            for side in (-25, -12.5, 0, 17.5, 35):
+                along = (30 * side / -25) if side < 0 else (-22 * side / 35)
+                vector = palm_vector(self.arc, curl + along / self.arc.span, side)
+                read = m.measure(raw(vector))
+                self.assertTrue(read["valid"], read)
+                self.assertAlmostEqual(read["progress"], curl, delta=.001)
+                self.assertAlmostEqual(read["sway_progress"], side / (25 if side < 0 else 35), delta=.001)
+
+    def test_compensation_unwraps_raw_angle_without_unsafe_range_acceptance(self):
+        arc = CurlModel((0, 0, 1), (math.sin(math.radians(150)), 0, math.cos(math.radians(150))))
+        model = PalmModel(arc.open, arc.fist, palm_vector(arc, 40 / 150, -30), palm_vector(arc, -30 / 150, 40))
+        self.assertAlmostEqual(model.measure(raw(palm_vector(arc, 190 / 150, -30)))["progress"], 1, delta=.001)
+        self.assertFalse(model.measure(raw(palm_vector(arc, -80 / 150, 0)))["valid"])
+
+    def test_legacy_profile_mode_preserves_old_uncorrected_readings(self):
+        left = palm_vector(self.arc, 10 / self.arc.span, -25)
+        right = palm_vector(self.arc, -8 / self.arc.span, 35)
+        legacy = PalmModel(OPEN_VEC, FIST_VEC, left, right, compensate=False)
+        read = legacy.measure(raw(left))
+        self.assertAlmostEqual(read["progress"], 10 / self.arc.span, delta=.001)
+        self.assertEqual(read["coupling_correction"], 0)
+
+    def test_left_and_right_follow_user_calibration_labels(self):
+        model = PalmModel(OPEN_VEC, FIST_VEC, palm_vector(self.arc, 0, 25), palm_vector(self.arc, 0, -35))
+        self.assertAlmostEqual(model.measure(raw(palm_vector(self.arc, .3, 25)))["sway_progress"], -1, delta=.001)
+        self.assertAlmostEqual(model.measure(raw(palm_vector(self.arc, .3, -35)))["sway_progress"], 1, delta=.001)
+
+    def test_unobservable_collinear_and_same_side_poses_rejected(self):
+        for left, right in ((palm_vector(self.arc, 0, 5), palm_vector(self.arc, 0, 35)),
+                            (palm_vector(self.arc, .5, 0), palm_vector(self.arc, 0, 35)),
+                            (palm_vector(self.arc, 0, 25), palm_vector(self.arc, 0, 35)),
+                            (palm_vector(self.arc, .9, -12), palm_vector(self.arc, 0, 35)),
+                            (palm_vector(self.arc, 0, -80), palm_vector(self.arc, 0, 35))):
+            with self.assertRaises(ValueError):
+                PalmModel(OPEN_VEC, FIST_VEC, left, right)
+
+    def test_invalid_magnitude_range_and_poles_are_rejected(self):
+        for vector in ((0, 0, 0), (True, 0, 8192), (float("nan"), 0, 8192), (1, 2),
+                       raw(palm_vector(self.arc, .5, 0), magnitude=1.3),
+                       raw(palm_vector(self.arc, .5, 80)), raw(palm_vector(self.arc, 2, 0))):
+            self.assertFalse(self.model.measure(vector)["valid"])
+
+    def test_neutral_and_smoothing(self):
+        f = SwayFilter()
+        self.assertEqual(f.update(-1, .1, 0), -1)
+        self.assertEqual(f.update(.08, .1, .9), 0)
+        self.assertAlmostEqual(f.update(.55, .1, 0), .5)
+        self.assertAlmostEqual(f.update(-1, .1, .5), -.25)
+        f.reset()
+        self.assertIsNone(f.output)
+
+    def test_direct_targets_combined_axes_and_motor_limits(self):
+        self.assertEqual(direct_targets(.5, .5)["index"], {"flex": 27.5, "side": 20})
+        self.assertEqual(direct_targets(.5, .5)["thumb"], {"flex": 27.5, "side": -20})
+        self.assertEqual(direct_targets(1, 1)["index"], {"flex": 85, "side": 5})
+        self.assertEqual(direct_targets(0, -1)["index"], {"flex": -30, "side": -40})
+        for curl in (-1, 0, .1, .5, .9, 1, 2):
+            for sway in (-2, -1, -.5, 0, .5, 1, 2):
+                for t in direct_targets(curl, sway).values():
+                    self.assertTrue(-30 <= t["flex"] <= 85)
+                    self.assertTrue(-40 <= t["side"] <= 40)
+                    self.assertLessEqual(abs(t["flex"]) + abs(t["side"]), 90)
+        for x in (True, None, "1", float("nan"), float("inf")):
+            with self.assertRaises(ValueError):
+                direct_targets(x, 0)
+            with self.assertRaises(ValueError):
+                direct_targets(0, x)
 
 
 class FakePanel:
@@ -234,7 +328,7 @@ class FollowMath(unittest.TestCase):
         self.assertEqual(clean["fingers"], {"thumb": False, "index": True, "middle": True, "ring": True})
         self.assertFalse(clean["long_press_start"])
         self.assertEqual(clean["hand_url"], "")
-        self.assertEqual(clean["mode"], "binary")
+        self.assertNotIn("mode", clean)
         self.assertEqual(clean_options("junk"), clean_options({}))
 
     def test_snapshot_statistics(self):
@@ -316,17 +410,18 @@ class EngineCase(unittest.IsolatedAsyncioTestCase):
         await self.until(lambda: self.engine.hand.reachable, message="手掌面板沒有連上")
         await self.until(lambda: self.engine.hand.poses, message="沒有讀到姿勢清單")
 
-    async def calibrate(self):
-        self.engine.cal_start()
-        self.fake.curl = 0.0
-        await self.until(lambda: self.engine.last_stable is not None, message="張開沒有停穩")
-        self.engine.cal_capture()
-        self.fake.curl = 1.0
-        await asyncio.sleep(0.15)
-        await self.until(lambda: self.engine.last_stable is not None, message="握拳沒有停穩")
-        self.engine.cal_capture()
+    async def calibrate(self, sway=True):
+        self.engine.cal_start(sway=sway)
+        poses = [("open", 0, 0), ("fist", 1, 0)]
+        if sway:
+            poses += [("left", 0, -25), ("right", 0, 35)]
+        for pose, curl, side in poses:
+            self.fake.curl, self.fake.twist = curl, side
+            await self.until(lambda: self.engine.last_stable is not None, message=pose + "沒有停穩")
+            self.engine.cal_capture(pose)
         self.assertEqual(self.engine.cal["step"], "review")
         self.engine.cal_save()
+        self.fake.twist = 0
 
     async def follow(self):
         await self.connect_all()
@@ -340,6 +435,128 @@ class EngineCase(unittest.IsolatedAsyncioTestCase):
         return self.panel.targets.get(finger, {}).get("flex")
 
     # ---------------------------------------------------------------- 啟動前
+    async def test_four_pose_calibration_taps_save_and_reload_without_motion(self):
+        await self.connect_all()
+        self.engine.cal_start(sway=True)
+        for i, (pose, curl, side) in enumerate((("open", 0, 0), ("fist", 1, 0), ("left", 0, -25), ("right", 0, 35))):
+            self.fake.curl, self.fake.twist = curl, side
+            await self.until(lambda: self.engine.last_stable is not None)
+            self.assertEqual(self.engine.cal["step"], pose)
+            self.fake.gesture(3)
+            await self.until(lambda: self.engine.cal[pose] is not None)
+            if i < 3:
+                self.assertIsNone(self.engine.cal["model"])
+        self.assertEqual(self.engine.cal["step"], "review")
+        self.assertIsInstance(self.engine.cal["model"], PalmModel)
+        self.fake.curl, self.fake.twist = .5, -12.5
+        await self.until(lambda: self.engine.sway.get("valid") and abs(self.engine.curl.get("progress", 0) - .5) < .01)
+        self.assertAlmostEqual(self.engine.curl["progress"], .5, delta=.01)
+        self.assertAlmostEqual(self.engine.sway["progress"], -.5, delta=.01)
+        await asyncio.sleep(.7)
+        self.fake.gesture(3)
+        await self.until(lambda: self.engine.model is not None)
+        saved = json.loads(self.engine.calibration_path.read_text())
+        self.assertEqual(saved["version"], 3)
+        self.assertIn("left", saved)
+        again = Engine(self.folder, check_studio=False)
+        self.assertIsInstance(again.model, PalmModel)
+        self.assertEqual(self.panel.posts, [])
+        self.assertFalse(self.panel.torque)
+
+    async def test_sway_retake_and_cancel_preserve_saved_legacy_calibration(self):
+        await self.connect_all()
+        await self.calibrate(sway=False)
+        before = self.engine.calibration_path.read_bytes()
+        self.engine.cal_start(sway=True)
+        # Deterministic stable inputs exercise the sequence, independent of BLE timings.
+        model = CurlModel(OPEN_VEC, FIST_VEC)
+        for pose, vec in (("open", model.open), ("fist", model.fist), ("left", palm_vector(model, 0, -25)),
+                          ("right", palm_vector(model, 0, 30))):
+            self.engine.last_stable = (time.monotonic(), vec, 0)
+            self.engine.cal_capture(pose)
+        self.engine.cal_retake("open")
+        self.assertIsNone(self.engine.cal["left"])
+        self.assertIsNone(self.engine.cal["right"])
+        with self.assertRaises(ValueError):
+            self.engine.cal_save()
+        self.engine.cal_cancel()
+        self.assertEqual(self.engine.calibration_path.read_bytes(), before)
+        self.assertNotIsInstance(self.engine.model, PalmModel)
+        self.assertIsNone(self.engine.snapshot()["follow"]["sway"]["value"])
+        self.assertEqual(self.panel.posts, [])
+
+    async def test_invalid_sway_calibration_can_be_corrected(self):
+        await self.connect_all()
+        self.engine.cal_start(sway=True)
+        model = CurlModel(OPEN_VEC, FIST_VEC)
+        for pose, vec in (("open", model.open), ("fist", model.fist), ("left", palm_vector(model, 0, -25))):
+            self.engine.last_stable = (time.monotonic(), vec, 0)
+            self.engine.cal_capture(pose)
+        self.engine.last_stable = (time.monotonic(), palm_vector(model, 0, -30), 0)
+        with self.assertRaisesRegex(ValueError, "同一側"):
+            self.engine.cal_capture("right")
+        self.assertIsNone(self.engine.last_stable)
+        self.assertIsNone(self.engine.cal["right"])
+        self.assertEqual(self.engine.cal["step"], "right")
+        self.engine.last_stable = (time.monotonic(), palm_vector(model, 0, 30), 0)
+        self.engine.cal_capture("right")
+        self.assertEqual(self.engine.cal["step"], "review")
+
+    async def test_side_errors_are_immediate_persistent_and_logged(self):
+        await self.connect_all()
+        self.engine.cal_start(sway=True)
+        arc = CurlModel(OPEN_VEC, FIST_VEC)
+        for pose, vec in (("open", arc.open), ("fist", arc.fist)):
+            self.engine.last_stable = (time.monotonic(), vec, 0)
+            self.engine.cal_capture(pose)
+        self.engine.last_stable = (time.monotonic(), palm_vector(arc, 0, -70), 0)
+        with self.assertRaisesRegex(ValueError, "超過 65"):
+            self.engine.cal_capture("left")
+        self.assertEqual(self.engine.cal["step"], "left")
+        self.assertIsNone(self.engine.cal["left"])
+        self.assertEqual(self.engine.cal["error"]["pose"], "left")
+        self.assertIn("70.0", self.engine.cal["message"])
+        self.assertEqual(self.engine.events[-1]["kind"], "calibration_rejected")
+        self.engine.last_stable = (time.monotonic(), palm_vector(arc, 30 / arc.span, -25), 0)
+        self.engine.cal_capture("left")
+        self.assertEqual(self.engine.cal["step"], "right")
+        self.assertIsNone(self.engine.cal["error"])
+        self.assertFalse(self.panel.posts)
+
+    async def test_legacy_version_two_loads_without_automatic_compensation(self):
+        arc = CurlModel(OPEN_VEC, FIST_VEC)
+        profile = {"version": 2, "name": "R08_E703", "open": arc.open, "fist": arc.fist,
+                   "left": palm_vector(arc, 10 / arc.span, -25), "right": palm_vector(arc, -8 / arc.span, 35)}
+        self.engine._write_json(self.engine.calibration_path, profile)
+        before = self.engine.calibration_path.read_bytes()
+        again = Engine(self.folder, check_studio=False)
+        self.assertFalse(again.model.compensate)
+        self.assertEqual(self.engine.calibration_path.read_bytes(), before)
+
+    async def test_sway_input_maps_servo_sides_but_does_not_enable_motion(self):
+        await self.connect_all()
+        model = CurlModel(OPEN_VEC, FIST_VEC)
+        self.engine.model = PalmModel(OPEN_VEC, FIST_VEC, palm_vector(model, 0, -25), palm_vector(model, 0, 35))
+        self.engine.options.update(smoothing=0, sway_neutral=.1)
+        for side in (-25, 0, 35):
+            self.engine._on_accel(raw(palm_vector(model, .5, side)), time.monotonic())
+            self.assertTrue(self.engine.sway["valid"])
+            expected = 40 * self.engine.sway_filter.output
+            self.assertAlmostEqual(self.engine.targets["index"]["side"], expected, delta=.1)
+            self.assertAlmostEqual(self.engine.targets["thumb"]["side"], -expected, delta=.1)
+            self.assertAlmostEqual(self.engine.curl["progress"], .5, delta=.01)
+        self.engine._on_accel(raw(palm_vector(model, .5, 70)), time.monotonic())
+        self.assertFalse(self.engine.sway["valid"])
+        self.assertIsNone(self.engine.snapshot()["follow"]["sway"]["value"])
+        self.engine.options["sway_neutral"] = .23
+        self.engine.set_options({"sway_neutral": .23})
+        again = Engine(self.folder, check_studio=False)
+        self.assertEqual(again.options["sway_neutral"], .23)
+        for value in (-1, .41, True, float("nan"), "0.2"):
+            with self.assertRaises(ValueError):
+                self.engine.set_options({"sway_neutral": value})
+        self.assertEqual(self.panel.posts, [])
+
     async def test_nothing_moves_until_started(self):
         await self.connect_all()
         await self.calibrate()
@@ -385,8 +602,8 @@ class EngineCase(unittest.IsolatedAsyncioTestCase):
         await self.connect_all()
         await self.calibrate()
         self.fake.twist = 60.0
-        await self.until(lambda: self.engine.curl.get("issue") == "off_axis")
-        with self.assertRaisesRegex(ValueError, "方向"):
+        await self.until(lambda: self.engine.curl.get("issue") == "sway_out_of_range")
+        with self.assertRaisesRegex(ValueError, "側擺"):
             await self.engine.arm()
         self.fake.twist = 0.0
         self.fake.magnitude = 1.6
@@ -403,7 +620,7 @@ class EngineCase(unittest.IsolatedAsyncioTestCase):
     # ---------------------------------------------------------------- 校正
     async def test_calibration_is_saved_and_reloaded(self):
         await self.connect_all()
-        await self.calibrate()
+        await self.calibrate(sway=False)
         saved = json.loads((self.folder / "calibration.json").read_text())
         self.assertEqual(saved["version"], 1)
         self.assertLess(angle_deg(saved["open"], OPEN_VEC), 1.0)
@@ -496,7 +713,7 @@ class EngineCase(unittest.IsolatedAsyncioTestCase):
         count = len(self.panel.calls("fingers"))
         self.fake.twist = 70.0                      # 轉手腕：離開校正的弧線
         self.fake.curl = 0.0
-        await self.until(lambda: self.engine.curl.get("issue") == "off_axis")
+        await self.until(lambda: self.engine.curl.get("issue") == "sway_out_of_range")
         await asyncio.sleep(0.5)
         self.assertEqual(len(self.panel.calls("fingers")), count)
         self.assertEqual(self.flex(), 85.0)
@@ -504,44 +721,65 @@ class EngineCase(unittest.IsolatedAsyncioTestCase):
         self.fake.twist = 0.0
         await self.until(lambda: self.flex() == -30.0)
 
-    async def test_selected_fingers_pose_and_scale(self):
+    async def test_selected_fingers_use_direct_inputs_and_speed_lock(self):
         await self.connect_all()
         await self.calibrate()
-        self.engine.set_options({"fist_pose": "stone", "fingers": {"thumb": False}, "fist_scale": 0.5,
-                                 "speed": "slow"})
-        self.fake.curl = 1.0
-        await self.until(lambda: self.engine.arm_problem() is None)
+        self.engine.set_options({"fingers": {"thumb": False}, "speed": "slow", "smoothing": 0})
+        self.fake.curl, self.fake.twist = .5, 35
+        await self.until(lambda: self.engine._inputs_fresh() and self.engine.sway_filter.output == 1)
         await self.engine.arm()
+        await self.until(lambda: self.flex() == 27.5 and self.panel.targets["index"]["side"] == 40)
+        self.assertEqual(self.panel.targets["thumb"], {"flex": -30, "side": 0})
         self.assertEqual(self.panel.calls("enable")[0]["speed"], "slow")
-        await self.until(lambda: self.flex() is not None)
-        await self.until(lambda: self.flex() == 30.0)
-        self.assertEqual(self.panel.targets["ring"]["flex"], 29.5)
-        self.assertEqual(self.panel.targets["thumb"], {"flex": -30.0, "side": 0.0})
         with self.assertRaisesRegex(ValueError, "跟隨中"):
             self.engine.set_options({"speed": "fast"})
 
-    async def test_unknown_or_unplayable_fist_pose_blocks_start(self):
+    async def test_removed_pose_preferences_cannot_affect_targets(self):
+        old = {"fist_pose": "right_swing", "fist_scale": .2, "mode": "binary", "speed": "slow"}
+        cleaned = clean_options(old)
+        self.assertEqual(cleaned["speed"], "slow")
+        for key in ("fist_pose", "fist_scale", "mode"):
+            self.assertNotIn(key, cleaned)
+            with self.assertRaises(ValueError):
+                self.engine.set_options({key: old[key]})
         await self.connect_all()
         await self.calibrate()
-        for name in ("gone", "old"):
-            self.engine.set_options({"fist_pose": name})
-            await asyncio.sleep(0.2)
-            with self.assertRaisesRegex(ValueError, name):
-                await self.engine.arm()
-        self.assertEqual(self.panel.calls("enable"), [])
-
-    async def test_binary_mode_sends_only_the_two_ends(self):
-        await self.connect_all()
-        await self.calibrate()
-        self.engine.set_options({"mode": "binary", "smoothing": 0.0})
-        self.fake.curl = 0.0
+        self.engine.hand.poses = []                # No saved poses are needed to start.
         await self.until(lambda: self.engine.arm_problem() is None)
         await self.engine.arm()
-        for curl in (0.2, 0.45, 0.7, 0.55, 0.3, 0.0):
-            self.fake.curl = curl
-            await asyncio.sleep(0.3)
-        sent = {body["fingers"]["index"]["flex"] for body in self.panel.calls("fingers")}
-        self.assertEqual(sent, {-30.0, 85.0})
+        self.assertEqual(len(self.panel.calls("enable")), 1)
+
+    async def test_direct_follow_has_continuous_combined_inputs(self):
+        await self.follow()
+        self.engine.set_options({"smoothing": 0})
+        for curl, side in ((.25, 35), (.5, 0), (.75, -25), (1, 35), (0, 0)):
+            self.fake.curl, self.fake.twist = curl, side
+            await self.until(lambda: abs(self.engine.curl.get("progress", -2) - curl) < .001 and self.engine._inputs_fresh())
+            expected = direct_targets(self.engine.filter.output, self.engine.sway_filter.output)
+            await self.until(lambda: self.panel.targets == expected, message=str(expected))
+        self.assertEqual(self.panel.targets["index"], {"flex": -30, "side": 0})
+
+    async def test_legacy_two_point_profile_blocks_direct_motion(self):
+        await self.connect_all()
+        await self.calibrate(sway=False)
+        await self.until(lambda: self.engine.curl.get("valid"))
+        with self.assertRaisesRegex(ValueError, "四姿勢"):
+            await self.engine.arm()
+        self.assertEqual(self.panel.calls("enable"), [])
+        self.assertFalse(self.engine.menu_status()["calibrated"])
+        self.assertEqual(self.engine.menu_status()["mode"], "uncalibrated")
+
+    async def test_stale_dual_inputs_do_not_send_even_if_targets_change(self):
+        await self.follow()
+        await self.until(lambda: self.panel.targets)
+        self.fake.silent = True
+        await asyncio.sleep(1.2)
+        count = len(self.panel.calls("fingers"))
+        self.engine.targets = direct_targets(1, 1)
+        self.engine.kick.set()
+        await asyncio.sleep(.35)
+        self.assertEqual(len(self.panel.calls("fingers")), count)
+        self.assertFalse(self.engine._inputs_fresh())
 
     # ---------------------------------------------------------------- 中止
     async def test_ring_drop_turns_torque_off(self):
@@ -911,6 +1149,32 @@ class ServerCase(unittest.IsolatedAsyncioTestCase):
         for name in ("/app.js", "/app.css"):
             async with self.session.get(self.base + name) as r:
                 self.assertEqual(r.status, 200)
+
+    async def test_sway_calibration_api_validation_and_default_compatibility(self):
+        engine = self.app[app_server.ENGINE]
+        await engine.ring_connect()
+        for _ in range(100):
+            if engine.ring.state["connected"]:
+                break
+            await asyncio.sleep(.02)
+        self.assertTrue(engine.ring.state["connected"])
+        async with self.session.post(self.base + "/api/calibration/start", json={"sway": "yes"}) as r:
+            self.assertEqual(r.status, 400)
+        self.assertFalse(engine.cal["active"])
+        async with self.session.post(self.base + "/api/calibration/start", json={"sway": True}) as r:
+            self.assertEqual(r.status, 200)
+        async with self.session.get(self.base + "/api/state") as r:
+            state = await r.json()
+        self.assertTrue(state["calibration"]["sway"])
+        self.assertIn("sway", state["follow"])
+        self.assertEqual(engine.phase, "idle")
+        async with self.session.post(self.base + "/api/calibration/capture", json={"pose": "right"}) as r:
+            self.assertEqual(r.status, 400)
+        async with self.session.post(self.base + "/api/calibration/cancel", json={}) as r:
+            self.assertEqual(r.status, 200)
+        async with self.session.post(self.base + "/api/calibration/start", json={}) as r:
+            self.assertEqual(r.status, 200)
+        self.assertFalse(engine.cal["sway"])
 
     async def test_foreign_origin_host_and_form_posts_are_refused(self):
         async with self.session.post(self.base + "/api/follow/stop", json={}, headers={"Origin": "http://evil.example"}) as r:

@@ -17,8 +17,8 @@ OUTPUT = ROOT / ".build.noindex"
 APP = OUTPUT / "QRing Hand.app"
 FRAMEWORK = Path(sys.base_prefix).resolve().parents[1]
 SITE = Path(sysconfig.get_path("purelib"))
-VERSION = "0.1.2"
-BUILD = "3"
+VERSION = "0.3.1"
+BUILD = "6"
 CODE = ("server.py", "engine.py", "follow.py", "ring.py", "hand.py", "sim.py")
 
 if __name__ == "__main__":

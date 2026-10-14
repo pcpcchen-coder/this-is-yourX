@@ -4,7 +4,7 @@
 
 | 資料夾 | 輸入 | 做什麼 | 狀態 |
 |---|---|---|---|
-| [`qring_fist/`](qring_fist/README.md) | QRing R08 智慧戒指的三軸加速度（藍牙，接在 Mac 上） | 操作者握拳，手跟著握拳；張開，跟著張開 | 2026-10-11 已實作並安裝；實機上有 bring-up 觀察，沒有 experiment ID。[ADR-0008](../../docs/adr/0008-qring-fist-operator-control.md)（proposed） |
+| [`qring_fist/`](qring_fist/README.md) | QRing R08 智慧戒指的三軸加速度（藍牙，接在 Mac 上） | 戒指三軸經四姿勢校正，直接連續控制手指彎曲與左右側擺 | 2026-10-11 已實作並安裝；實機上有 bring-up 觀察，沒有 experiment ID。[ADR-0008](../../docs/adr/0008-qring-fist-operator-control.md)（proposed） |
 | （規劃中） | 雙目相機（[`stereo_camera/`](../../stereo_camera/README.md)） | George 打算之後用它做另一種控制方法 | 還沒開始；做法未定 |
 
 右手原本就有的兩條路不在這個資料夾裡：人在瀏覽器上逐指操作的[網頁操作面板](../docs/hand_panel.md)（`hand_panel/`），

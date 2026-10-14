@@ -93,7 +93,7 @@ async def create_app(folder, port, fake_ring=False, self_test=False):
         return ok(confirmed=await engine.stop())
 
     async def cal_start(req):
-        engine.cal_start()
+        engine.cal_start(sway=(await body(req)).get("sway", False))
         return ok()
 
     async def cal_capture(req):

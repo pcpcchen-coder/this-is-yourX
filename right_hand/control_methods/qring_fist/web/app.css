@@ -221,3 +221,21 @@ legend { font-family: var(--round); font-weight: 700; font-size: 1.05rem; paddin
 .poll-inputs input[type=number] { width: 5.2rem; }
 .poll-presets button { font-size: .82rem; padding: .3rem .55rem; }
 .poll-warn { color: var(--brass); }
+
+/* 左右側擺是獨立輸入，不表示機器手的側擺目標。 */
+.palm-input { width: min(100%, 32rem); background: var(--raised); border: 1px solid var(--line); border-radius: 14px; padding: .8rem 1rem; }
+.palm-input h3 { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: .6rem; }
+.palm-input output, .sway-scale output { color: var(--steel); font-variant-numeric: tabular-nums; font-weight: 700; }
+.palm-input .note { margin-top: .5rem; }
+.sway-track { position: relative; height: 20px; border-radius: 10px; background: var(--sunk); overflow: hidden; }
+.sway-track::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; border-left: 2px dashed var(--ink2); }
+.sway-neutral { position: absolute; height: 100%; background: color-mix(in srgb, var(--ok) 22%, transparent); }
+.sway-track i { position: absolute; top: 1px; bottom: 1px; width: 8px; margin-left: -4px; background: var(--steel); border-radius: 4px; z-index: 1; }
+.sway-scale { display: flex; justify-content: space-between; margin-top: .3rem; font-size: .85rem; color: var(--ink2); }
+.side-icon { font-size: 4rem; line-height: 1.2; text-align: center; color: var(--steel); }
+
+.finger { grid-template-columns: 3.3rem 1fr; }
+.finger output { grid-column: 1 / -1; font-size: .75rem; }
+
+.cal-message[data-error=true] { border-color: var(--stop); color: var(--stop); }
+#cal-geometry { font-variant-numeric: tabular-nums; }
