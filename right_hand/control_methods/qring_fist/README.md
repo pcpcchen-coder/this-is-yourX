@@ -1,6 +1,8 @@
-# qring_fist — 用戒指握拳控制右手（QRing Hand 0.1.2）
+# qring_fist — 用戒指握拳控制右手（QRing Hand 0.2.0）
 
 操作者戴著 QRing R08 智慧戒指握拳，Amazing Hand 右手跟著握拳；張開，它跟著張開。
+0.2.0 新增左右側擺作為獨立的戒指輸入；四姿勢校正、側擺讀值與可調中立範圍見 [側擺輸入說明](sway-input.md)。機器手的動作對應仍是握拳。
+
 這是 [`control_methods/`](../README.md) 底下的第一種控制方法。決策見 [ADR-0008](../../../docs/adr/0008-qring-fist-operator-control.md)（proposed）。
 
 macOS App（Apple Silicon）「QRing Hand」。戒指用藍牙接在 Mac 上；手接在 Raspberry Pi 上，經由
@@ -93,9 +95,9 @@ zsh right_hand/control_methods/qring_fist/install.command
 
 單顆三軸加速度計只量得到重力方向，所以：
 
-- 校正和操作時，手掌要維持同一個方向。掌心朝下、或手指朝上（像舉手）都可以。
+- 原兩點模式校正和操作時，手掌要維持同一個方向。0.2.0 四點模式可加入左右側傾，見 [限制與校正](sway-input.md#能觀測的自由度)。
 - 手掌直立、手指朝前（握手的姿勢）量不到：握拳的轉軸和重力平行，讀值不變。兩個姿勢相差不到 20° 時校正會被拒絕。
-- 轉手腕或前臂也會改變讀值，戒指分不出來。離開校正的弧線超過「方向偏離容許」（預設 35°）時，手停在上一個位置。
+- 轉手腕或前臂也會改變讀值，戒指分不出動作來源。兩點模式離開校正弧線超過「方向偏離容許」時保持舊目標；四點模式改採已校正的左右範圍。
 - 揮動手臂時量到的不只是重力；大小不在 0.8–1.2 g 的取樣不採用。
 - 一顆戒指只有一個握拳程度，四根手指一起動。
 
@@ -185,7 +187,7 @@ zsh right_hand/control_methods/qring_fist/install.command
 | `web/` | 介面（控制、校正、設定），沒有外部資源 |
 | `native/Hand.swift` | AppKit＋WKWebView 容器、選單列、內建服務的啟動與結束 |
 | `build_app.py`、`install.command`、`requirements.txt` | 建置與安裝 |
-| `test_hand.py` | 59 項測試 |
+| `test_hand.py` | 69 項測試 |
 | `site.example.json` | 這台機器的預設面板位址範例；實際的 `site.json` 不進 Git |
 
 ```bash

@@ -191,8 +191,8 @@
     let readingText = "", readingBad = false;
     if (!ring.connected) readingText = "先連接戒指";
     else if (follow.stale) { readingText = "戒指的資料中斷，手掌停在上一個位置"; readingBad = true; }
-    else if (curl.issue) { readingText = curl.issue_text; readingBad = ["moving", "off_axis", "out_of_range", "invalid"].includes(curl.issue); }
-    else if (curl.valid) readingText = "讀值正常，方向偏離 " + Math.abs(curl.off).toFixed(0) + "°";
+    else if (curl.issue) { readingText = curl.issue_text; readingBad = ["moving", "off_axis", "out_of_range", "sway_out_of_range", "invalid"].includes(curl.issue); }
+    else if (curl.valid) readingText = curl.sway_progress != null ? "握拳與側擺讀值正常" : "讀值正常，方向偏離 " + Math.abs(curl.off).toFixed(0) + "°";
     text(reading, readingText);
     attr(reading, "data-bad", readingBad);
 
@@ -291,12 +291,15 @@
     text("cal-message", message);
 
     const stable = cal.stable;
-    for (const pose of ["open", "fist"]) {
+    enable("cal-sway", !cal.active && idle && !busy);
+    const hasSides = cal.active ? cal.sway : $("cal-sway").checked;
+    show("pose-left", hasSides); show("pose-right", hasSides);
+    for (const pose of ["open", "fist", "left", "right"]) {
       const card = $("pose-" + pose);
       const recorded = cal.active ? cal[pose] : cal.saved && cal.saved[pose];
       attr(card, "data-current", cal.active && cal.step === pose);
       attr(card, "data-done", !!recorded);
-      const label = pose === "open" ? "張開" : "握拳";
+      const label = {open:"張開", fist:"握拳", left:"左側擺", right:"右側擺"}[pose];
       let st = "還沒記錄";
       if (recorded) st = "已記錄 " + vec(recorded);
       else if (cal.active && cal.step === pose) st = "擺好" + label + "的姿勢，停住";
@@ -305,7 +308,7 @@
       enable(card.querySelector(".capture"), cal.active && cal.step === pose && !!(stable && stable.stable) && !busy);
       show(card.querySelector(".capture"), !(cal.active && cal[pose]));
       show(card.querySelector(".retake"), cal.active && !!cal[pose]);
-      draw(card.querySelector("svg"), pose === "open" ? 0 : 1, "you", null, false);
+      if (card.querySelector("svg")) draw(card.querySelector("svg"), pose === "open" ? 0 : 1, "you", null, false);
     }
     const steady = $("steady");
     let sState = "wait", sText = "等資料";
@@ -327,15 +330,36 @@
     meter.querySelector(".hi").style.left = s.options.fist_margin * 100 + "%";
     text("meter-value", has ? percent(curl.value) : "—");
     let note = "校正後，這裡會即時顯示握拳程度。黑線是原始讀值，虛線是「設定」裡張開與握拳到底的界線。";
-    if (cal.active && cal.step === "review") note = "張開、握拳幾次，確認兩端都到得了。沒問題就儲存；單擊戒指也可以。";
+    if (cal.active && cal.step === "review") note = cal.sway ? "張開、握拳、左右側擺，確認兩個讀值。側擺的機器手動作尚未指定；沒問題就儲存，或單擊戒指。" : "張開、握拳幾次，確認兩端都到得了。沒問題就儲存；單擊戒指也可以。";
     else if (has && curl.issue) note = curl.issue_text;
     text("review-note", note);
     show("cal-save", cal.active && cal.step === "review");
     document.querySelector('nav [data-tab="calibration"]').classList.toggle("attention", ring.connected && !cal.saved && !cal.active);
   }
 
+  function renderSway(s) {
+    const side = s.follow.sway || {};
+    const fresh = s.ring.connected && side.valid && side.age != null && side.age <= 1 && side.value != null;
+    const value = fresh ? side.value : null;
+    const label = value == null ? "—" : Math.abs(value) < .005 ? "中立 0%" :
+        (value < 0 ? "左 " : "右 ") + Math.round(Math.abs(value) * 100) + "%";
+    for (const id of ["sway-value", "cal-sway-value"]) text(id, label);
+    for (const id of ["sway-marker", "cal-sway-marker"]) {
+      show(id, fresh);
+      if (fresh) $(id).style.left = ((value + 1) / 2 * 100) + "%";
+    }
+    for (const zone of document.querySelectorAll(".sway-neutral")) {
+      zone.style.width = s.options.sway_neutral * 100 + "%";
+      zone.style.left = (50 - s.options.sway_neutral * 50) + "%";
+    }
+    let note = "完成四個姿勢校正，即可新增左右側擺輸入。原本握拳校正仍可使用。";
+    if (side.calibrated) note = fresh ? "側擺角度 " + side.angle + "° · 有效讀值 " + side.age.toFixed(2) + " 秒前" :
+        (side.issue_text || "等待最新的有效取樣");
+    text("sway-note", note); text("cal-sway-note", note);
+  }
+
   // ────────────────────────────────────────────────── 設定
-  const OPTION_IDS = ["auto_link", "speed", "fist_pose", "fist_scale", "mode", "smoothing", "open_margin", "fist_margin",
+  const OPTION_IDS = ["sway_neutral", "auto_link", "speed", "fist_pose", "fist_scale", "mode", "smoothing", "open_margin", "fist_margin",
                       "deadband", "off_limit", "ring_touch", "tap_confirm", "long_press_stop", "long_press_start"];
   function labelFor(input) {
     const out = document.querySelector('output[data-for="' + input.id + '"]');
@@ -472,6 +496,7 @@
     text("version", s.app.version);
     renderControl(s);
     renderCalibration(s);
+    renderSway(s);
     renderSettings(s);
     renderPolling(s);
   }
@@ -526,7 +551,8 @@
       confirmUntil = Date.now() + 4000;
       render(state);
     });
-    $("cal-start").addEventListener("click", () => act("/api/calibration/start"));
+    $("cal-start").addEventListener("click", () => act("/api/calibration/start", {sway: $("cal-sway").checked}));
+    $("cal-sway").addEventListener("change", () => { if (state) renderCalibration(state); });
     $("cal-cancel").addEventListener("click", () => act("/api/calibration/cancel"));
     $("cal-save").addEventListener("click", () => act("/api/calibration/save", {}, () => toast("校正已儲存")));
     for (const b of document.querySelectorAll(".capture")) b.addEventListener("click", () => act("/api/calibration/capture", { pose: b.dataset.pose }));

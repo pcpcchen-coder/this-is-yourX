@@ -66,6 +66,13 @@
         </figure>
       </div>
       <p class="reading" id="reading">等戒指的三軸資料</p>
+      <div class="palm-input" aria-label="握拳與側擺輸入">
+        <h3>左右側擺 <output id="sway-value">—</output></h3>
+        <div class="sway-track"><span class="sway-neutral"></span><i id="sway-marker" hidden></i></div>
+        <div class="sway-scale"><span>左</span><span>中立</span><span>右</span></div>
+        <p class="note" id="sway-note">完成左右校正後，會在這裡顯示獨立的側擺輸入。</p>
+        <p class="note">機器手目前跟隨握拳；側擺提供獨立輸入，尚未指定機器手動作。</p>
+      </div>
 
       <button type="button" id="power" class="power" aria-pressed="false" disabled>
         <span class="rocker"><i></i></span>
@@ -102,8 +109,9 @@
 <section id="tab-calibration" class="tab" hidden>
   <div class="cal-head">
     <div>
-      <h2>校正張開與握拳</h2>
-      <p>戒指量的是重力方向。手掌的方向不變時，握拳會讓戴戒指的那節手指轉一個角度；記下張開與握拳兩個讀值，中間就能換算成握拳程度。</p>
+      <h2>校正握拳與左右側擺</h2>
+      <p>先記錄張開與握拳，再保持手指張開，分別向左、向右側傾。每一步停穩後可單擊戒指確認，最後再單擊儲存。</p>
+      <label class="check"><input type="checkbox" id="cal-sway" checked> 同時校正左右側擺（四個姿勢）</label>
     </div>
     <div class="cal-actions">
       <button type="button" id="cal-start" class="primary">開始校正</button>
@@ -132,6 +140,22 @@
         <button type="button" class="retake" data-pose="fist" hidden>重記</button>
       </div>
     </article>
+    <article class="pose" id="pose-left">
+      <div class="side-icon" aria-hidden="true">↶</div>
+      <h3>左側擺</h3>
+      <p class="note">手指張開，從中立向左側傾斜。</p>
+      <p class="pose-state">還沒記錄</p>
+      <div class="row"><button type="button" class="capture primary" data-pose="left" disabled>記錄左側擺</button>
+      <button type="button" class="retake" data-pose="left" hidden>重記</button></div>
+    </article>
+    <article class="pose" id="pose-right">
+      <div class="side-icon" aria-hidden="true">↷</div>
+      <h3>右側擺</h3>
+      <p class="note">手指張開，從中立向右側傾斜。</p>
+      <p class="pose-state">還沒記錄</p>
+      <div class="row"><button type="button" class="capture primary" data-pose="right" disabled>記錄右側擺</button>
+      <button type="button" class="retake" data-pose="right" hidden>重記</button></div>
+    </article>
     <article class="pose live">
       <h3>現在的讀值</h3>
       <div class="steady" id="steady"><i></i><span>等資料</span></div>
@@ -150,6 +174,10 @@
       <div class="meter-track"><i class="meter-fill"></i><i class="meter-raw"></i><b class="mark lo"></b><b class="mark hi"></b></div>
       <div class="meter-scale"><span>張開</span><output id="meter-value">—</output><span>握拳</span></div>
     </div>
+    <h3>左右側擺</h3>
+    <div class="sway-track"><span class="sway-neutral"></span><i id="cal-sway-marker" hidden></i></div>
+    <div class="sway-scale"><span>左</span><output id="cal-sway-value">—</output><span>右</span></div>
+    <p class="note" id="cal-sway-note">需要四個姿勢校正。</p>
     <p class="note" id="review-note">校正後，這裡會即時顯示握拳程度。</p>
     <div class="row">
       <button type="button" id="cal-save" class="primary" hidden>儲存校正</button>
@@ -159,9 +187,9 @@
   <aside class="limits">
     <h3>單顆戒指量得到與量不到的</h3>
     <ul>
-      <li>校正和操作時，手掌要維持同一個方向。掌心朝下、或手指朝上（像舉手）都可以。</li>
+      <li>張開與握拳取樣時保持手掌方向；左右取樣時手指張開。平行桌面左右轉若不改變重力方向，量不到。</li>
       <li>手掌直立、手指朝前（握手的姿勢）量不到：握拳的轉軸和重力平行，讀值不會變。</li>
-      <li>轉手腕或前臂也會改變讀值，戒指分不出來。偏離校正太多時 APP 會停在上一個位置，不亂動。</li>
+      <li>四點校正分出握拳與側傾兩個方向座標；轉手腕、前臂等其他動作仍可能產生相同讀值，不能辨認動作來源。超出校正範圍會暫停更新。</li>
       <li>揮動手臂時的讀值不採用；動作放慢，手掌會跟得比較準。</li>
     </ul>
   </aside>
@@ -202,6 +230,10 @@
 
     <fieldset>
       <legend>跟隨的手感</legend>
+      <label class="field"><span class="head">側擺中立範圍 <output data-for="opt-sway_neutral"></output></span>
+        <input type="range" id="opt-sway_neutral" min="0" max="0.4" step="0.01" data-percent>
+        <small>以左右各自校正的幅度為準；範圍內視為中立。預設 10%，可調 0–40%。平滑沿用下方設定。</small>
+      </label>
       <label class="field">模式
         <select id="opt-mode"><option value="continuous">連續：握多少、跟多少</option><option value="binary">兩段：只有張開與握拳</option></select>
       </label>
