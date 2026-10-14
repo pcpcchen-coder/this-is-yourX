@@ -142,7 +142,7 @@
     enable("stop", hand.linked);
 
     // 步驟
-    const done = { ring: ring.connected, hand: hand.reachable, cal: !!(cal.saved && cal.saved.version === 2), go: follow.phase === "following" };
+    const done = { ring: ring.connected, hand: hand.reachable, cal: !!(cal.saved && [2, 3].includes(cal.saved.version)), go: follow.phase === "following" };
     let next = null;
     for (const li of $("steps").children) {
       const key = li.dataset.step;
@@ -289,11 +289,12 @@
     if (!cal.active) {
       if (!ring.connected) message = "先到「控制」連接戒指。";
       else if (!idle) message = "跟隨中不能校正；先停止。";
-      else if (cal.saved && cal.saved.version !== 2) message = "原兩點校正已保留；直接跟隨需要張開、握拳、左、右四個姿勢，請重新校正。";
+      else if (cal.saved && ![2, 3].includes(cal.saved.version)) message = "原兩點校正已保留；直接跟隨需要張開、握拳、左、右四個姿勢，請重新校正。";
       else if (cal.saved) message = "已校正（" + cal.saved.saved_at.replace("T", " ").slice(0, 16) + "），張開與握拳相差 " + cal.saved.span_deg + "°。";
       else message = "還沒校正。戴好戒指，按「開始校正」。";
     }
     text("cal-message", message);
+    attr("cal-message", "data-error", !!(cal.active && cal.error));
 
     const stable = cal.stable;
     const hasSides = cal.active ? cal.sway : true;
@@ -314,11 +315,18 @@
       show(card.querySelector(".retake"), cal.active && !!cal[pose]);
       if (card.querySelector("svg")) draw(card.querySelector("svg"), pose === "open" ? 0 : 1, "you", null, false);
     }
+    const candidate = cal.candidate;
+    let geometryText = "側擺可伴隨握拳方向的偏移，程式會依左右取樣補償；手指保持自然張開。";
+    if (cal.active && ["left", "right"].includes(cal.step)) {
+      geometryText = candidate ? "可辨識側擺 " + Math.abs(candidate.side_deg).toFixed(1) + "° · 沿握拳偏移 " + candidate.along_deg.toFixed(1) +
+          "° · 方向分離度 " + candidate.separation_deg.toFixed(1) + "° · " + (candidate.reason || (candidate.ready ? "可記錄" : "請停穩後記錄")) : "正在收集側擺取樣；停穩後呈現角度。";
+    }
+    text("cal-geometry", geometryText);
     const steady = $("steady");
     let sState = "wait", sText = "等資料";
     if (!ring.connected) sText = "戒指未連線";
     else if (stable && stable.stable) { sState = "stable"; sText = "已停穩（散布 " + stable.spread + "°）"; }
-    else if (stable && stable.issue === "moving") { sState = "moving"; sText = "還在動"; }
+    else if (stable && stable.issue === "moving") { sState = "moving"; sText = ring.magnitude != null && (ring.magnitude < .9 || ring.magnitude > 1.1) ? "加速度 " + ring.magnitude.toFixed(2) + " g；校正需 0.9–1.1 g，請保持不動" : "還在動"; }
     else if (stable && stable.issue === "collecting") sText = "收集中…";
     attr(steady, "data-state", sState);
     text(steady.lastElementChild, sText);
@@ -338,7 +346,7 @@
     else if (has && curl.issue) note = curl.issue_text;
     text("review-note", note);
     show("cal-save", cal.active && cal.step === "review");
-    document.querySelector('nav [data-tab="calibration"]').classList.toggle("attention", ring.connected && !(cal.saved && cal.saved.version === 2) && !cal.active);
+    document.querySelector('nav [data-tab="calibration"]').classList.toggle("attention", ring.connected && !(cal.saved && [2, 3].includes(cal.saved.version)) && !cal.active);
   }
 
   function renderSway(s) {

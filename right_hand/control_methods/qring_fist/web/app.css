@@ -236,3 +236,6 @@ legend { font-family: var(--round); font-weight: 700; font-size: 1.05rem; paddin
 
 .finger { grid-template-columns: 3.3rem 1fr; }
 .finger output { grid-column: 1 / -1; font-size: .75rem; }
+
+.cal-message[data-error=true] { border-color: var(--stop); color: var(--stop); }
+#cal-geometry { font-variant-numeric: tabular-nums; }

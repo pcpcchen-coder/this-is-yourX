@@ -46,6 +46,33 @@ class PalmCase(unittest.TestCase):
                 expected = side / (25 if side < 0 else 35)
                 self.assertAlmostEqual(m["sway_progress"], expected, delta=.001)
 
+    def test_natural_coupled_sway_is_calibrated_and_compensated(self):
+        left = palm_vector(self.arc, 30 / self.arc.span, -25)
+        right = palm_vector(self.arc, -22 / self.arc.span, 35)
+        m = PalmModel(OPEN_VEC, FIST_VEC, left, right)
+        for curl in (0, .3, .7, 1):
+            for side in (-25, -12.5, 0, 17.5, 35):
+                along = (30 * side / -25) if side < 0 else (-22 * side / 35)
+                vector = palm_vector(self.arc, curl + along / self.arc.span, side)
+                read = m.measure(raw(vector))
+                self.assertTrue(read["valid"], read)
+                self.assertAlmostEqual(read["progress"], curl, delta=.001)
+                self.assertAlmostEqual(read["sway_progress"], side / (25 if side < 0 else 35), delta=.001)
+
+    def test_compensation_unwraps_raw_angle_without_unsafe_range_acceptance(self):
+        arc = CurlModel((0, 0, 1), (math.sin(math.radians(150)), 0, math.cos(math.radians(150))))
+        model = PalmModel(arc.open, arc.fist, palm_vector(arc, 40 / 150, -30), palm_vector(arc, -30 / 150, 40))
+        self.assertAlmostEqual(model.measure(raw(palm_vector(arc, 190 / 150, -30)))["progress"], 1, delta=.001)
+        self.assertFalse(model.measure(raw(palm_vector(arc, -80 / 150, 0)))["valid"])
+
+    def test_legacy_profile_mode_preserves_old_uncorrected_readings(self):
+        left = palm_vector(self.arc, 10 / self.arc.span, -25)
+        right = palm_vector(self.arc, -8 / self.arc.span, 35)
+        legacy = PalmModel(OPEN_VEC, FIST_VEC, left, right, compensate=False)
+        read = legacy.measure(raw(left))
+        self.assertAlmostEqual(read["progress"], 10 / self.arc.span, delta=.001)
+        self.assertEqual(read["coupling_correction"], 0)
+
     def test_left_and_right_follow_user_calibration_labels(self):
         model = PalmModel(OPEN_VEC, FIST_VEC, palm_vector(self.arc, 0, 25), palm_vector(self.arc, 0, -35))
         self.assertAlmostEqual(model.measure(raw(palm_vector(self.arc, .3, 25)))["sway_progress"], -1, delta=.001)
@@ -55,7 +82,7 @@ class PalmCase(unittest.TestCase):
         for left, right in ((palm_vector(self.arc, 0, 5), palm_vector(self.arc, 0, 35)),
                             (palm_vector(self.arc, .5, 0), palm_vector(self.arc, 0, 35)),
                             (palm_vector(self.arc, 0, 25), palm_vector(self.arc, 0, 35)),
-                            (palm_vector(self.arc, .4, -25), palm_vector(self.arc, 0, 35)),
+                            (palm_vector(self.arc, .9, -12), palm_vector(self.arc, 0, 35)),
                             (palm_vector(self.arc, 0, -80), palm_vector(self.arc, 0, 35))):
             with self.assertRaises(ValueError):
                 PalmModel(OPEN_VEC, FIST_VEC, left, right)
@@ -429,7 +456,7 @@ class EngineCase(unittest.IsolatedAsyncioTestCase):
         self.fake.gesture(3)
         await self.until(lambda: self.engine.model is not None)
         saved = json.loads(self.engine.calibration_path.read_text())
-        self.assertEqual(saved["version"], 2)
+        self.assertEqual(saved["version"], 3)
         self.assertIn("left", saved)
         again = Engine(self.folder, check_studio=False)
         self.assertIsInstance(again.model, PalmModel)
@@ -474,6 +501,37 @@ class EngineCase(unittest.IsolatedAsyncioTestCase):
         self.engine.last_stable = (time.monotonic(), palm_vector(model, 0, 30), 0)
         self.engine.cal_capture("right")
         self.assertEqual(self.engine.cal["step"], "review")
+
+    async def test_side_errors_are_immediate_persistent_and_logged(self):
+        await self.connect_all()
+        self.engine.cal_start(sway=True)
+        arc = CurlModel(OPEN_VEC, FIST_VEC)
+        for pose, vec in (("open", arc.open), ("fist", arc.fist)):
+            self.engine.last_stable = (time.monotonic(), vec, 0)
+            self.engine.cal_capture(pose)
+        self.engine.last_stable = (time.monotonic(), palm_vector(arc, 0, -70), 0)
+        with self.assertRaisesRegex(ValueError, "超過 65"):
+            self.engine.cal_capture("left")
+        self.assertEqual(self.engine.cal["step"], "left")
+        self.assertIsNone(self.engine.cal["left"])
+        self.assertEqual(self.engine.cal["error"]["pose"], "left")
+        self.assertIn("70.0", self.engine.cal["message"])
+        self.assertEqual(self.engine.events[-1]["kind"], "calibration_rejected")
+        self.engine.last_stable = (time.monotonic(), palm_vector(arc, 30 / arc.span, -25), 0)
+        self.engine.cal_capture("left")
+        self.assertEqual(self.engine.cal["step"], "right")
+        self.assertIsNone(self.engine.cal["error"])
+        self.assertFalse(self.panel.posts)
+
+    async def test_legacy_version_two_loads_without_automatic_compensation(self):
+        arc = CurlModel(OPEN_VEC, FIST_VEC)
+        profile = {"version": 2, "name": "R08_E703", "open": arc.open, "fist": arc.fist,
+                   "left": palm_vector(arc, 10 / arc.span, -25), "right": palm_vector(arc, -8 / arc.span, 35)}
+        self.engine._write_json(self.engine.calibration_path, profile)
+        before = self.engine.calibration_path.read_bytes()
+        again = Engine(self.folder, check_studio=False)
+        self.assertFalse(again.model.compensate)
+        self.assertEqual(self.engine.calibration_path.read_bytes(), before)
 
     async def test_sway_input_maps_servo_sides_but_does_not_enable_motion(self):
         await self.connect_all()

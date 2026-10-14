@@ -98,40 +98,64 @@ class CurlModel:
 
 
 class PalmModel(CurlModel):
-    """兩個可觀測的重力方向座標：握拳弧線的角度＋離開平面的左右角度。
-
-    左右取樣時手指張開；側擺不得和握拳方向重疊。這不是完整手腕姿態追蹤。
-    """
-    def __init__(self, open_vec, fist_vec, left_vec, right_vec):
+    """握拳座標＋左右側擺；用左右取樣補償側擺伴隨的握拳方向偏移。"""
+    def __init__(self, open_vec, fist_vec, left_vec, right_vec, compensate=True):
         super().__init__(open_vec, fist_vec)
+        self.compensate = compensate
         self.sides = {}
+        self.coupling = {}
+        self.geometry = {}
         for name, vec in (("left", left_vec), ("right", right_vec)):
-            if not valid_vector(vec):
-                raise ValueError("左右側擺校正資料無效")
-            g = unit(vec)
-            latitude = math.degrees(math.asin(max(-1.0, min(1.0, dot(g, self.normal)))))
-            along = math.degrees(math.atan2(dot(g, self.along), dot(g, self.open)))
-            if abs(latitude) < 10:
-                raise ValueError("%s側擺的獨立角度不足 10°；這個動作量不到，或和握拳方向重疊。換個手掌方向再試"
-                                 % ("左" if name == "left" else "右"))
-            if abs(latitude) > 65 or abs(along) > 15:
-                raise ValueError("%s側擺時請保持手指張開；側擺角度需在 10–65°，避免靠近垂直於握拳平面的方向"
-                                 % ("左" if name == "left" else "右"))
-            self.sides[name] = latitude
+            d = self.check_side(name, vec)
+            self.geometry[name] = d
+            self.sides[name] = d["side_deg"]
+            self.coupling[name] = d["along_deg"]
         if self.sides["left"] * self.sides["right"] >= 0:
-            raise ValueError("左右側擺記成同一側；請分別向左、向右，兩邊都要離開中立")
+            raise ValueError("左右側擺記成同一側；請回到中立再分別向左、向右，兩邊都要離開中立")
+
+    def side_diagnostics(self, vec):
+        if not valid_vector(vec):
+            raise ValueError("左右側擺校正資料無效")
+        g = unit(vec)
+        latitude = math.degrees(math.asin(max(-1.0, min(1.0, dot(g, self.normal)))))
+        along = math.degrees(math.atan2(dot(g, self.along), dot(g, self.open)))
+        separation = math.degrees(math.atan2(abs(latitude), abs(along)))
+        return {"side_deg": latitude, "along_deg": along, "separation_deg": separation}
+
+    def check_side(self, name, vec):
+        d = PalmModel.side_diagnostics(self, vec)
+        side, along, separation = d["side_deg"], d["along_deg"], d["separation_deg"]
+        label = "左" if name == "left" else "右"
+        if abs(side) < 10:
+            raise ValueError("%s側擺可辨識角度 %.1f°，不足 10°；多側傾一些。平行桌面旋轉可能量不到" % (label, abs(side)))
+        if abs(side) > 65:
+            raise ValueError("%s側擺角度 %.1f°，超過 65°；減少側傾幅度，保持手指自然張開" % (label, abs(side)))
+        if abs(along) > 80:
+            raise ValueError("%s側擺沿握拳方向偏移 %.1f°，超過 80°；回到中立、保持自然張開再側傾" % (label, abs(along)))
+        if separation < 20:
+            raise ValueError("%s側擺與握拳方向分離度 %.1f°，需至少 20°（沿握拳偏移 %.1f°）；換個手掌中立方向再校正" %
+                             (label, separation, along))
+        return d
 
     def measure(self, raw, off_limit=35.0):
         out = super().measure(raw, 90.0)
         if out.get("issue") in ("invalid", "moving"):
             return out
-        # 用未四捨五入的方向計算；側擺在握拳平面的兩側，正負由使用者的左右取樣定義。
         g = unit(raw)
-        off = math.degrees(math.asin(max(-1.0, min(1.0, dot(g, self.normal)))))
-        endpoint = self.sides["left"] if off * self.sides["left"] > 0 else self.sides["right"]
-        sway = abs(off / endpoint) * (-1 if endpoint == self.sides["left"] else 1)
-        out.update(sway_progress=sway, sway_angle=round(off, 1))
-        # 只接受校正範圍與原方向容許的交集；極點附近握拳投影不可靠。
+        d = self.side_diagnostics(g)
+        off, theta = d["side_deg"], d["along_deg"]
+        endpoint_name = "left" if off * self.sides["left"] > 0 else "right"
+        fraction = off / self.sides[endpoint_name]
+        sway = abs(fraction) * (-1 if endpoint_name == "left" else 1)
+        correction = fraction * self.coupling[endpoint_name] if self.compensate else 0.0
+        # 選擇最接近有效握拳弧線的 360° 分支，避免跨 atan2 的 ±180° 時跳動。
+        theta -= correction
+        theta = min((theta - 360, theta, theta + 360), key=lambda t: abs(t - self.span / 2))
+        out.update(theta=round(theta, 1), off=round(off, 1), progress=theta / self.span,
+                   sway_progress=sway, sway_angle=round(off, 1), coupling_correction=round(correction, 1),
+                   valid=True, issue=None)
+        if theta < -RANGE_MARGIN_DEG or theta > self.span + RANGE_MARGIN_DEG:
+            out.update(valid=False, issue="out_of_range")
         margin = min(off_limit, 15.0)
         lo, hi = sorted(self.sides.values())
         if off < lo - margin or off > hi + margin or abs(off) > 75:

@@ -112,3 +112,7 @@ George 有一顆 QRing R08 智慧戒指（資料在 [pcpcchen-coder/qringr08plus
 ## 2026-10-14：取消姿勢選擇，直接連續跟隨（QRing Hand 0.3.0）
 
 依 George 的後續要求，移除「握拳的樣子」與兩段模式，改由四點校正後的彎曲／側擺連續比例直接產生手指目標；側擺現在已映射到手指側擺。上述 0.2.0 段落是當時的輸入功能狀態。現行輸出契約為 `direct-v1`，固定換算、限幅、舊設定遷移、讀值新鮮度與 72 項模擬測試見 [直接跟隨](../../right_hand/control_methods/qring_fist/direct-follow.md)。AI 路徑與面板保護不變；新映射未做實機動作驗證。
+
+## 2026-10-14：側擺校正補償與診斷（0.3.1）
+
+取消側擺沿握拳方向偏移不得超過 15° 的假設，改由左右校正取樣補償；每側立即驗證，UI 呈現角度與錯誤原因。新校正存 version 3，舊 version 2 原映射保留，77 項模擬測試通過。詳見 [校正失敗調查](../../right_hand/control_methods/qring_fist/calibration-fix.md)。不更動機器手安全限位與 AI 路徑，實體補償效果仍待使用者驗證。

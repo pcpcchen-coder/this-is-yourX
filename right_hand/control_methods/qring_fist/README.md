@@ -1,7 +1,9 @@
-# qring_fist — 用戒指握拳控制右手（QRing Hand 0.3.0）
+# qring_fist — 用戒指握拳控制右手（QRing Hand 0.3.1）
 
 操作者戴著 QRing R08 智慧戒指握拳，Amazing Hand 右手跟著握拳；張開，它跟著張開。
 0.3.0 改成直接連續跟隨：三軸資料經四姿勢校正後，彎曲與左右側擺同時驅動手指。已移除「握拳的樣子」與兩段模式，不讀取存好的握拳姿勢或幅度。見 [直接跟隨](direct-follow.md) 與 [校正座標](sway-input.md)。
+
+0.3.1 修正側擺的伴隨偏移限制與延遲報錯，新增即時角度診斷；需重新校正才能啟用補償，見 [校正失敗調查](calibration-fix.md)。
 
 這是 [`control_methods/`](../README.md) 底下的第一種控制方法。決策見 [ADR-0008](../../../docs/adr/0008-qring-fist-operator-control.md)（proposed）。
 
@@ -183,7 +185,7 @@ zsh right_hand/control_methods/qring_fist/install.command
 | `web/` | 介面（控制、校正、設定），沒有外部資源 |
 | `native/Hand.swift` | AppKit＋WKWebView 容器、選單列、內建服務的啟動與結束 |
 | `build_app.py`、`install.command`、`requirements.txt` | 建置與安裝 |
-| `test_hand.py` | 72 項測試 |
+| `test_hand.py` | 77 項測試 |
 | `site.example.json` | 這台機器的預設面板位址範例；實際的 `site.json` 不進 Git |
 
 ```bash

@@ -25,7 +25,7 @@ from follow import FINGERS, FINGER_LABELS, CurlFilter, CurlModel, PalmModel, Swa
 from hand import HandLink, finish_tasks, normalize_url
 from ring import POLL_DEFAULTS, POLL_LIMITS, POLL_PRESETS, RingLink
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 RING_NAME = "R08_E703"
 SEND_PERIOD_S = 0.12            # 和面板頁面拖滑桿時的送出間隔相同
 FLEX_SPAN_DEG = 120.0           # 張開 −30° 到握 90°
@@ -119,10 +119,11 @@ class Engine:
         self.model = None
         self.calibration = None
         profile = self._read_json(self.calibration_path)
-        if isinstance(profile, dict) and profile.get("version") in (1, 2) and profile.get("name") == RING_NAME:
+        if isinstance(profile, dict) and profile.get("version") in (1, 2, 3) and profile.get("name") == RING_NAME:
             try:
-                self.model = (PalmModel(profile["open"], profile["fist"], profile["left"], profile["right"])
-                              if profile["version"] == 2 else CurlModel(profile["open"], profile["fist"]))
+                self.model = (PalmModel(profile["open"], profile["fist"], profile["left"], profile["right"],
+                                        compensate=profile["version"] >= 3)
+                              if profile["version"] >= 2 else CurlModel(profile["open"], profile["fist"]))
                 self.calibration = profile
             except (ValueError, KeyError, TypeError):
                 pass
@@ -134,7 +135,7 @@ class Engine:
         self.filter = CurlFilter()
         self.window = StabilityWindow()
         self.last_stable = None                # (monotonic, 平均方向, 散布度)
-        self.cal = {"active": False, "step": None, "open": None, "fist": None, "left": None, "right": None, "sway": False, "message": "", "model": None}
+        self.cal = {"active": False, "step": None, "open": None, "fist": None, "left": None, "right": None, "sway": False, "message": "", "error": None, "model": None}
         self.phase = "idle"                    # idle / starting / following / stopping
         self.message = ""                      # 最近一次啟動、停止的說明
         self.message_kind = "info"             # info / warn
@@ -501,7 +502,7 @@ class Engine:
     @staticmethod
     def _cal_empty(message=""):
         return {"active": False, "step": None, "open": None, "fist": None, "left": None, "right": None,
-                "sway": False, "model": None, "message": message}
+                "sway": False, "model": None, "error": None, "message": message}
 
     def _cal_poses(self):
         return ("open", "fist", "left", "right") if self.cal["sway"] else ("open", "fist")
@@ -527,6 +528,16 @@ class Engine:
         self.log("calibration", "開始校正", sway=sway)
 
     def cal_capture(self, pose=None):
+        try:
+            return self._cal_capture(pose)
+        except ValueError as e:
+            if self.cal["active"]:
+                self.cal["message"] = str(e)
+                self.cal["error"] = {"pose": pose or self.cal["step"], "message": str(e)}
+                self.log("calibration_rejected", str(e), pose=pose or self.cal["step"])
+            raise
+
+    def _cal_capture(self, pose=None):
         if not self.cal["active"]:
             raise ValueError("還沒開始校正")
         pose = pose or self.cal["step"]
@@ -537,11 +548,17 @@ class Engine:
             raise ValueError("手還沒停穩。保持姿勢不動約 2 秒再記錄")
         mean, spread = list(self.last_stable[1]), self.last_stable[2]
         self.cal[pose] = mean
+        self.cal["error"] = None
         self.cal["model"] = None
         try:
             # 握拳記好就檢查，避免到最後才發現方向量不到。
             if self.cal["open"] and self.cal["fist"]:
-                CurlModel(self.cal["open"], self.cal["fist"])
+                arc = CurlModel(self.cal["open"], self.cal["fist"])
+                if pose in ("left", "right"):
+                    diag = PalmModel.check_side(arc, pose, mean)
+                    other = self.cal["right" if pose == "left" else "left"]
+                    if other is not None and diag["side_deg"] * PalmModel.side_diagnostics(arc, other)["side_deg"] >= 0:
+                        raise ValueError("左右側擺記成同一側；回到中立，再向另一側傾斜")
             missing = [p for p in self._cal_poses() if self.cal[p] is None]
             if not missing:
                 self.cal["model"] = (PalmModel(self.cal["open"], self.cal["fist"], self.cal["left"], self.cal["right"])
@@ -577,17 +594,17 @@ class Engine:
         model = self.cal.get("model")
         if not self.cal["active"] or model is None:
             raise ValueError("所有姿勢都要先記錄")
-        profile = {"version": 2 if self.cal["sway"] else 1, "name": RING_NAME,
+        profile = {"version": 3 if self.cal["sway"] else 1, "name": RING_NAME,
                    "open": self.cal["open"], "fist": self.cal["fist"], "span_deg": round(model.span, 1),
                    "saved_at": datetime.now().astimezone().isoformat(timespec="seconds")}
         if self.cal["sway"]:
-            profile.update(left=self.cal["left"], right=self.cal["right"], sway_degrees=model.sides)
+            profile.update(left=self.cal["left"], right=self.cal["right"], sway_degrees=model.sides, side_geometry=model.geometry)
         self._write_json(self.calibration_path, profile)
         self.model, self.calibration = model, profile
         self.cal = self._cal_empty()
         self._reset_cal_samples()
         self.log("calibration", "校正已儲存", span_deg=profile["span_deg"], version=profile["version"])
-        self._say("校正已儲存（張開／握拳%s）" % ("＋左右側擺" if profile["version"] == 2 else ""))
+        self._say("校正已儲存（張開／握拳%s）" % ("＋左右側擺" if profile["version"] >= 2 else ""))
 
     def cal_cancel(self, message=""):
         if self.cal["active"]:
@@ -661,9 +678,25 @@ class Engine:
         curl["age"] = round(now - self.curl_at, 2) if self.curl_at else None
         if curl.get("issue"):
             curl["issue_text"] = ISSUE_TEXT.get(curl["issue"], curl["issue"])
-        cal = {k: self.cal[k] for k in ("active", "step", "open", "fist", "left", "right", "sway", "message")}
+        cal = {k: self.cal[k] for k in ("active", "step", "open", "fist", "left", "right", "sway", "message", "error")}
         cal["span"] = round(self.cal["model"].span, 1) if self.cal.get("model") else None
         cal["stable"] = stable
+        cal["candidate"] = None
+        if self.cal["active"] and self.cal["step"] in ("left", "right") and stable and stable.get("mean") and self.cal["open"] and self.cal["fist"]:
+            try:
+                arc = CurlModel(self.cal["open"], self.cal["fist"])
+                cal["candidate"] = PalmModel.side_diagnostics(arc, stable["mean"])
+                cal["candidate"]["ready"] = False
+                try:
+                    PalmModel.check_side(arc, self.cal["step"], stable["mean"])
+                    other = self.cal["right" if self.cal["step"] == "left" else "left"]
+                    if other and cal["candidate"]["side_deg"] * PalmModel.side_diagnostics(arc, other)["side_deg"] >= 0:
+                        raise ValueError("左右側擺記成同一側；回到中立，再向另一側傾斜")
+                    cal["candidate"]["ready"] = bool(stable["stable"])
+                except ValueError as e:
+                    cal["candidate"]["reason"] = str(e)
+            except ValueError:
+                pass
         cal["saved"] = self.calibration
         sway = dict(self.sway)
         sway["age"] = round(now - self.sway_at, 2) if self.sway_at else None
