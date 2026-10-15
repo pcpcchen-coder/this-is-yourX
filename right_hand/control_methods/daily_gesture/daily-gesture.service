@@ -1,0 +1,9 @@
+# 每天早上的自創手勢（一次性執行；由 daily-gesture.timer 叫起）。說明：right_hand/control_methods/daily_gesture/README.md
+[Unit]
+Description=Amazing Hand right hand: daily Claude-invented gesture (via operator panel, slow)
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/this-is-yourX/right_hand
+ExecStart=/usr/bin/python3 %h/this-is-yourX/right_hand/control_methods/daily_gesture/daily_gesture.py
+TimeoutStartSec=120
