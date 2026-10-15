@@ -1,0 +1,11 @@
+# 每天台北時間 07:00。錯過（主機關著）就不補做，免得開機後手突然自己動。
+[Unit]
+Description=Daily gesture at 07:00 Asia/Taipei
+
+[Timer]
+OnCalendar=*-*-* 07:00:00 Asia/Taipei
+Persistent=false
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
