@@ -53,6 +53,7 @@ right_hand/
 │   ├── gesture_calibration.md      # 固定手勢的定案角度與指尖間距對照（OK）
 │   ├── hand_api_design.md          # AI 介面的設計、核准流程、安裝與接上 AI 工具
 │   ├── hand_panel.md               # 網頁操作面板：啟動、第一次實機使用、自動關扭力的條件、限制
+│   ├── tactile_bom.md              # 指尖觸覺（FSR + ADS1115）：方案比較、採購清單、貼法、接線、指尖力估算（規劃）
 │   └── assembly_checklist/
 │       ├── index.html              # 75 項可勾選檢查表，瀏覽器直接開
 │       ├── progress.json           # 進度快照
@@ -63,6 +64,7 @@ right_hand/
 │   ├── first_scan.sh               # 第一次上電：建環境、找埠、掃描（只讀）
 │   ├── assign_id.sh                # 單顆：掃描 → 轉動測試 → 改 ID → 再掃描
 │   ├── finger_cal.sh               # 單指校正（center、finger）、全手測試（hand）、固定手勢（gesture）
+│   ├── finger_force_estimate.py    # 用官方 MuJoCo 模型估算指尖力、印出指節尺寸（離線，需另裝 mujoco）
 │   ├── handd.sh                    # 啟動 handd（預設模擬；--adapter scs 接實體只讀）
 │   ├── hand.sh                     # 操作者指令：status、pending、approve、stop、clear-fault、log
 │   ├── hand_mcp.py                 # MCP stdio server 進入點（登記到 AI 工具用）
