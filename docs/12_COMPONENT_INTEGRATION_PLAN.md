@@ -53,7 +53,7 @@ flowchart LR
 
 ### B. 觸覺：讓手知道自己碰到東西
 
-2026-10-19 George 選觸覺當下一個元件。第一版的採購清單與接法見 [`right_hand/docs/tactile_bom.md`](../right_hand/docs/tactile_bom.md)。
+2026-10-19 George 選觸覺當下一個元件。第一版的採購清單、貼法與接法，以及 FSR 以外觸覺方案的比較，見 [`right_hand/docs/tactile_bom.md`](../right_hand/docs/tactile_bom.md)。
 
 | 元件 | 帶來什麼 | 成本 | 優先 |
 |---|---|---|---|
