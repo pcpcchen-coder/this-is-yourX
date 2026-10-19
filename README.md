@@ -91,6 +91,7 @@ flowchart TD
 | [AI Agent 整合](docs/09_AI_AGENT_INTEGRATION.md) | Tools、prompt、model routing 與 agent evaluation |
 | [名詞表](docs/10_GLOSSARY.md) | self-model、grounding、evidence 等詞彙 |
 | [S1 實機建置計畫](docs/11_S1_BUILD_PLAN.md) | 原 2-DOF 本地視覺方案；目前保留為 fallback |
+| [元件連動規劃](docs/12_COMPONENT_INTEGRATION_PLAN.md) | 右手、雙目相機、戒指的角色與搭配，之後可加的元件、連動點子與障礙（規劃草稿） |
 | [開發歷史與目前 S1 決策](docs/HISTORY.md) | Amazing Hand 採購、Webcam、影像模型、資料與驗收計畫 |
 | [技術參考](docs/REFERENCES.md) | 官方文件與版本選擇依據 |
 | [右手實機](right_hand/README.md) | Amazing Hand 右手的到貨清點、組裝指引與檢查表、bring-up 工具、建置紀錄 |
