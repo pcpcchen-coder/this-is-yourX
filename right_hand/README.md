@@ -53,6 +53,7 @@ right_hand/
 │   ├── gesture_calibration.md      # 固定手勢的定案角度與指尖間距對照（OK）
 │   ├── hand_api_design.md          # AI 介面的設計、核准流程、安裝與接上 AI 工具
 │   ├── hand_panel.md               # 網頁操作面板：啟動、第一次實機使用、自動關扭力的條件、限制
+│   ├── tactile_bom.md              # 指尖觸覺（FSR + ADS1115）的採購清單與第一版接法（規劃）
 │   └── assembly_checklist/
 │       ├── index.html              # 75 項可勾選檢查表，瀏覽器直接開
 │       ├── progress.json           # 進度快照
